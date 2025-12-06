@@ -370,10 +370,10 @@ DrawMario PROC
     
     cmp facing_right, 1
     je FacingRight
-    mov al, '{'        ; Facing left
+    mov al, 'M'        ; Facing left
     jmp DrawChar
     FacingRight:
-    mov al, '}'        ; Facing right
+    mov al, 'M'        ; Facing right
     
     DrawChar:
     call WriteChar
@@ -1048,9 +1048,42 @@ CheckCollisions PROC
     cmp eax, goomba2_y
     jne SkipFire1Goomba2
     mov goomba2_alive, 0
-    mov fireball2_dir, 0
+    mov fireball1_dir, 0        ; Fixed: was fireball2_dir
     add score, 200
     SkipFire1Goomba2:
+    
+    ; Fireball 2 vs Goomba 1
+    cmp fireball2_dir, 0
+    je SkipFire2Goomba1
+    cmp goomba1_alive, 1
+    jne SkipFire2Goomba1
+    mov eax, fireball2_x
+    cmp eax, goomba1_x
+    jne SkipFire2Goomba1
+    mov eax, fireball2_y
+    cmp eax, goomba1_y
+    jne SkipFire2Goomba1
+    ; Hit!
+    mov goomba1_alive, 0
+    mov fireball2_dir, 0
+    add score, 200
+    SkipFire2Goomba1:
+    
+    ; Fireball 2 vs Goomba 2
+    cmp fireball2_dir, 0
+    je SkipFire2Goomba2
+    cmp goomba2_alive, 1
+    jne SkipFire2Goomba2
+    mov eax, fireball2_x
+    cmp eax, goomba2_x
+    jne SkipFire2Goomba2
+    mov eax, fireball2_y
+    cmp eax, goomba2_y
+    jne SkipFire2Goomba2
+    mov goomba2_alive, 0
+    mov fireball2_dir, 0
+    add score, 200
+    SkipFire2Goomba2:
     
     ; Check coin collection
     mov eax, mario_y
