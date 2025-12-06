@@ -45,6 +45,7 @@ PlaySound PROTO,
     livetxt db " Lives: ",0
     username_txt db " Player: ",0
     level_text db " World: ",0
+    timer_text db " Time: ",0
     
     ; === PLAYER DATA ===
     userName db 20 dup(?)
@@ -114,6 +115,8 @@ PlaySound PROTO,
     move_counter dd 0
     enemy_counter dd 0
     fireball_counter dd 0
+    game_timer dd 0          ; Game timer in seconds
+    frame_counter dd 0       ; Frame counter for timer
     
     ; === INPUT ===
     last_key db 0
@@ -615,6 +618,36 @@ DrawHUD PROC
     add al, level
     dec al
     call WriteChar
+    
+    mov al, ' '
+    call WriteChar
+    call WriteChar
+    
+    ; Timer (display as M:SS format)
+    mov edx, offset timer_text
+    call WriteString
+    
+    ; Calculate minutes and seconds
+    mov eax, game_timer
+    mov ebx, 60
+    xor edx, edx
+    div ebx                 ; EAX = minutes, EDX = seconds
+    
+    ; Display minutes
+    call WriteDec
+    mov al, ':'
+    call WriteChar
+    
+    ; Display seconds with leading zero if needed
+    mov eax, edx
+    cmp eax, 10
+    jge NoLeadingZero
+    push eax
+    mov al, '0'
+    call WriteChar
+    pop eax
+    NoLeadingZero:
+    call WriteDec
     
     ; Reset to normal colors
     mov eax, white + (black*16)
@@ -1511,6 +1544,36 @@ GameLoop PROC
         
         ; Update game objects
         inc move_counter
+        inc frame_counter
+        
+        ; Update timer every ~1 second
+        mov eax, frame_counter
+        cmp eax, 10              ; 20 frames at 30ms delay = ~600ms, adjusted for more accurate 1 second
+        jl SkipTimerUpdate
+        
+        ; Decrement timer (countdown)
+        cmp game_timer, 0
+        jle TimerExpired
+        dec game_timer
+        mov frame_counter, 0
+        jmp SkipTimerUpdate
+        
+        TimerExpired:
+        ; Timer ran out - lose a life
+        dec lives
+        cmp lives, 0
+        jle GameOver            ; No lives left = game over
+        
+        ; Respawn Mario with remaining lives
+        mov mario_x, 5
+        mov mario_y, 17
+        mov mario_velocity_y, 0
+        mov mario_on_ground, 1
+        mov game_timer, 110     ; Reset timer to 1:50
+        mov frame_counter, 0
+        
+        SkipTimerUpdate:
+        
         mov eax, move_counter
         and eax, 7              ; Every 8 frames (slower enemies)
         cmp eax, 0
@@ -1593,6 +1656,8 @@ main PROC
         mov mario_on_ground, 1   ; Start on ground (changed from 0)
         mov lives, 3
         mov score, 0
+        mov game_timer, 110     ; Start with 110 seconds (1:50)
+        mov frame_counter, 0
         mov fire_active, 1      ; Fire Master Mario starts with fire
         mov fireball1_dir, 0
         mov fireball2_dir, 0
