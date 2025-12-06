@@ -27,6 +27,11 @@ PlaySound PROTO,
     gameOver1 db "GAME OVER",0
     gameWon1 db "YOU WIN!",0
     
+    ; === PAUSE MENU STRINGS ===
+    pause_title db "PAUSED",0
+    pause_resume db "Resume (R)",0
+    pause_quit db "Quit to Menu (Q)",0
+    
     ; === MARIO ASCII ART ===
     mario_line1 db "  __  __       __    __      _____      _____      ____       ____      ",0
     mario_line2 db " |  \/  |     /_ |  /_ |    |  __ \    |_   _|    / __ \     / __ \     ",0
@@ -98,6 +103,7 @@ PlaySound PROTO,
     
     ; === LEVEL MAP ===
     ; 0 = empty, 1 = wall/platform, 2 = coin, 3 = ice flower
+    ; 4 = pipe top-left, 5 = pipe top-right, 6 = pipe vertical, 7 = warp pipe entrance
     map_width = 80
     map_height = 24
     
@@ -274,6 +280,60 @@ InitializeLevel1 PROC
     add eax, 53
     mov [level1_map + eax], 3
     
+    ; === Add Pipes ===
+    ; Pipe 1: Medium pipe at x=40, starting at y=15 (3 blocks tall)
+    ; Top
+    mov eax, map_width
+    imul eax, 15
+    add eax, 40
+    mov [level1_map + eax], 4
+    inc eax
+    mov [level1_map + eax], 5
+    ; Body row 1
+    mov eax, map_width
+    imul eax, 16
+    add eax, 40
+    mov [level1_map + eax], 6
+    inc eax
+    mov [level1_map + eax], 6
+    ; Body row 2
+    mov eax, map_width
+    imul eax, 17
+    add eax, 40
+    mov [level1_map + eax], 6
+    inc eax
+    mov [level1_map + eax], 6
+    
+    ; Pipe 2: Tall warp pipe at x=65, starting at y=14 (4 blocks tall)
+    ; Top
+    mov eax, map_width
+    imul eax, 14
+    add eax, 65
+    mov [level1_map + eax], 4
+    inc eax
+    mov [level1_map + eax], 5
+    ; Body row 1
+    mov eax, map_width
+    imul eax, 15
+    add eax, 65
+    mov [level1_map + eax], 6
+    inc eax
+    mov [level1_map + eax], 6
+    ; Body row 2 with warp entrance
+    mov eax, map_width
+    imul eax, 16
+    add eax, 65
+    mov [level1_map + eax], 6
+    inc eax
+    mov [level1_map + eax], 7    ; Warp entrance
+    ; Body row 3
+    mov eax, map_width
+    imul eax, 17
+    add eax, 65
+    mov [level1_map + eax], 6
+    inc eax
+    mov [level1_map + eax], 6
+    
     ret
 InitializeLevel1 ENDP
 
@@ -312,6 +372,14 @@ DrawMap PROC
             je DrawCoin
             cmp ecx, 3
             je DrawIceFlower
+            cmp ecx, 4
+            je DrawPipeTopLeft
+            cmp ecx, 5
+            je DrawPipeTopRight
+            cmp ecx, 6
+            je DrawPipeVertical
+            cmp ecx, 7
+            je DrawWarpPipe
             jmp DrawEmpty
             
             DrawWall:
@@ -339,6 +407,42 @@ DrawMap PROC
                 mov eax, lightCyan + (black*16)
                 call SetTextColor
                 mov al, '*'
+                call WriteChar
+                pop eax
+                jmp NextTile
+            
+            DrawPipeTopLeft:
+                push eax
+                mov eax, green + (black*16)
+                call SetTextColor
+                mov al, 201  ; ╔
+                call WriteChar
+                pop eax
+                jmp NextTile
+            
+            DrawPipeTopRight:
+                push eax
+                mov eax, green + (black*16)
+                call SetTextColor
+                mov al, 187  ; ╗
+                call WriteChar
+                pop eax
+                jmp NextTile
+            
+            DrawPipeVertical:
+                push eax
+                mov eax, green + (black*16)
+                call SetTextColor
+                mov al, 186  ; ║
+                call WriteChar
+                pop eax
+                jmp NextTile
+            
+            DrawWarpPipe:
+                push eax
+                mov eax, lightGreen + (black*16)
+                call SetTextColor
+                mov al, 254  ; ■ (warp entrance)
                 call WriteChar
                 pop eax
                 jmp NextTile
@@ -537,7 +641,11 @@ CheckCollisionBelow PROC
     add eax, mario_x
     
     movzx ecx, byte ptr [level1_map + eax]
-    cmp ecx, 1
+    cmp ecx, 1             ; Platform
+    je HasCollision
+    cmp ecx, 4             ; Pipe top-left
+    je HasCollision
+    cmp ecx, 5             ; Pipe top-right
     je HasCollision
     
     NoCollision:
@@ -565,7 +673,15 @@ CheckCollisionAbove PROC
     add eax, mario_x
     
     movzx ecx, byte ptr [level1_map + eax]
-    cmp ecx, 1
+    cmp ecx, 1             ; Platform
+    je HasCollisionAbove
+    cmp ecx, 4             ; Pipe top-left
+    je HasCollisionAbove
+    cmp ecx, 5             ; Pipe top-right
+    je HasCollisionAbove
+    cmp ecx, 6             ; Pipe vertical
+    je HasCollisionAbove
+    cmp ecx, 7             ; Warp entrance
     je HasCollisionAbove
     
     NoCollisionAbove:
@@ -602,7 +718,15 @@ CheckCollisionAt PROC
     add eax, ebx
     
     movzx ecx, byte ptr [level1_map + eax]
-    cmp ecx, 1
+    cmp ecx, 1             ; Platform
+    je HasCollision2
+    cmp ecx, 4             ; Pipe top-left
+    je HasCollision2
+    cmp ecx, 5             ; Pipe top-right
+    je HasCollision2
+    cmp ecx, 6             ; Pipe vertical
+    je HasCollision2
+    cmp ecx, 7             ; Warp entrance
     je HasCollision2
     
     mov al, 0
@@ -846,7 +970,15 @@ HandleInput PROC
             jmp NoInput
     
     PauseGame:
-        ; TODO: Implement pause
+        ; Toggle pause state (2 = paused)
+        cmp game_state, 2
+        je NoInput  ; Already paused, ignore additional P presses
+        mov game_state, 2
+        call DrawPauseMenu
+        ; Wait for key release
+        PauseWait:
+            call ReadKey
+            jnz PauseWait
         jmp NoInput
     
     QuitGame:
@@ -940,15 +1072,37 @@ UpdateEnemies PROC
     cmp eax, 1
     je Goomba1Right
     ; Moving left
-    dec goomba1_x
+    mov eax, goomba1_x
+    dec eax
+    mov ebx, goomba1_y
+    push ebx
+    push eax
+    call CheckCollisionAt    ; Check if pipe or wall ahead
+    pop ebx                  ; Restore proposed x position
+    pop ecx                  ; Clean up stack
+    cmp al, 1
+    je Goomba1HitLeft
+    mov goomba1_x, ebx       ; Safe to move
     cmp goomba1_x, 20
     jge SkipGoomba1Move
+    Goomba1HitLeft:
     mov goomba1_dir, 1
     jmp SkipGoomba1Move
     Goomba1Right:
-    inc goomba1_x
+    mov eax, goomba1_x
+    inc eax
+    mov ebx, goomba1_y
+    push ebx
+    push eax
+    call CheckCollisionAt    ; Check if pipe or wall ahead
+    pop ebx                  ; Restore proposed x position
+    pop ecx                  ; Clean up stack
+    cmp al, 1
+    je Goomba1HitRight
+    mov goomba1_x, ebx       ; Safe to move
     cmp goomba1_x, 35
     jle SkipGoomba1Move
+    Goomba1HitRight:
     mov goomba1_dir, 2
     SkipGoomba1Move:
     
@@ -961,15 +1115,38 @@ UpdateEnemies PROC
     movzx eax, goomba2_dir
     cmp eax, 1
     je Goomba2Right
-    dec goomba2_x
+    ; Moving left
+    mov eax, goomba2_x
+    dec eax
+    mov ebx, goomba2_y
+    push ebx
+    push eax
+    call CheckCollisionAt    ; Check if pipe or wall ahead
+    pop ebx                  ; Restore proposed x position
+    pop ecx                  ; Clean up stack
+    cmp al, 1
+    je Goomba2HitLeft
+    mov goomba2_x, ebx       ; Safe to move
     cmp goomba2_x, 55
     jge SkipGoomba2Move
+    Goomba2HitLeft:
     mov goomba2_dir, 1
     jmp SkipGoomba2Move
     Goomba2Right:
-    inc goomba2_x
+    mov eax, goomba2_x
+    inc eax
+    mov ebx, goomba2_y
+    push ebx
+    push eax
+    call CheckCollisionAt    ; Check if pipe or wall ahead
+    pop ebx                  ; Restore proposed x position
+    pop ecx                  ; Clean up stack
+    cmp al, 1
+    je Goomba2HitRight
+    mov goomba2_x, ebx       ; Safe to move
     cmp goomba2_x, 70
     jle SkipGoomba2Move
+    Goomba2HitRight:
     mov goomba2_dir, 2
     SkipGoomba2Move:
     
@@ -1181,6 +1358,44 @@ DrawMarioASCII PROC
 DrawMarioASCII ENDP
 
 ; ============================================================
+; PROCEDURE: DrawPauseMenu
+; Draws the pause menu with black screen
+; ============================================================
+DrawPauseMenu PROC
+    ; Clear screen for clean pause menu
+    call Clrscr
+    
+    ; Draw pause title
+    mov eax, yellow + (black*16)
+    call SetTextColor
+    mov dh, 10
+    mov dl, 35
+    call Gotoxy
+    mov edx, offset pause_title
+    call WriteString
+    
+    ; Draw resume option
+    mov eax, green + (black*16)
+    call SetTextColor
+    mov dh, 13
+    mov dl, 32
+    call Gotoxy
+    mov edx, offset pause_resume
+    call WriteString
+    
+    ; Draw quit option
+    mov eax, red + (black*16)
+    call SetTextColor
+    mov dh, 15
+    mov dl, 29
+    call Gotoxy
+    mov edx, offset pause_quit
+    call WriteString
+    
+    ret
+DrawPauseMenu ENDP
+
+; ============================================================
 ; PROCEDURE: PrintMainMenu
 ; ============================================================
 PrintMainMenu PROC
@@ -1255,6 +1470,41 @@ GameLoop PROC
         ; Check if quitting
         cmp game_state, 3
         je ExitGame
+        
+        ; Check if paused - if so, wait for resume/quit input
+        cmp game_state, 2
+        jne ContinueGameplay
+        
+        ; In pause state - wait for R or Q
+        PauseInputLoop:
+            call ReadKey
+            jz PauseInputLoop  ; No key pressed, keep waiting
+            
+            ; Check for Resume (R)
+            cmp al, 'r'
+            je ResumeGame
+            cmp al, 'R'
+            je ResumeGame
+            
+            ; Check for Quit (Q)
+            cmp al, 'q'
+            je QuitFromPause
+            cmp al, 'Q'
+            je QuitFromPause
+            
+            ; Invalid key, keep waiting
+            jmp PauseInputLoop
+        
+        ResumeGame:
+            mov game_state, 1
+            call Clrscr  ; Clear pause screen
+            jmp GameLoopStart  ; Redraw everything
+        
+        QuitFromPause:
+            mov game_state, 3
+            jmp ExitGame
+        
+        ContinueGameplay:
         
         ; Update physics
         call UpdateMarioPhysics
