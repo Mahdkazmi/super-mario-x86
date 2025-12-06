@@ -27,6 +27,14 @@ PlaySound PROTO,
     gameOver1 db "GAME OVER",0
     gameWon1 db "YOU WIN!",0
     
+    ; === MARIO ASCII ART ===
+    mario_line1 db "  __  __       __    __      _____      _____      ____       ____      ",0
+    mario_line2 db " |  \/  |     /_ |  /_ |    |  __ \    |_   _|    / __ \     / __ \     ",0
+    mario_line3 db " | \  / |      | |   | |    | |__) |     | |     | |  | |   | |  | |    ",0
+    mario_line4 db " | |\/| |      | |   | |    |  _  /      | |     | |  | |   | |  | |    ",0
+    mario_line5 db " | |  | |      | |   | |    | | \ \     _| |_    | |__| |   | |__| |    ",0
+    mario_line6 db " |_|  |_|      |_|   |_|    |_|  \_\   |_____|    \____/     \____/     ",0
+    
     ; === GAME STRINGS ===
     socre_txt db " Score: ",0
     livetxt db " Lives: ",0
@@ -1111,14 +1119,80 @@ CheckCollisions PROC
 CheckCollisions ENDP
 
 ; ============================================================
+; PROCEDURE: DrawMarioASCII
+; Draws colorful MARIO ASCII art
+; ============================================================
+DrawMarioASCII PROC
+    ; Line 1 - Red
+    mov dh, 2
+    mov dl, 5
+    call Gotoxy
+    mov eax, red + (black*16)
+    call SetTextColor
+    mov edx, offset mario_line1
+    call WriteString
+    
+    ; Line 2 - Yellow
+    mov dh, 3
+    mov dl, 5
+    call Gotoxy
+    mov eax, yellow + (black*16)
+    call SetTextColor
+    mov edx, offset mario_line2
+    call WriteString
+    
+    ; Line 3 - Green
+    mov dh, 4
+    mov dl, 5
+    call Gotoxy
+    mov eax, green + (black*16)
+    call SetTextColor
+    mov edx, offset mario_line3
+    call WriteString
+    
+    ; Line 4 - Cyan
+    mov dh, 5
+    mov dl, 5
+    call Gotoxy
+    mov eax, cyan + (black*16)
+    call SetTextColor
+    mov edx, offset mario_line4
+    call WriteString
+    
+    ; Line 5 - Magenta
+    mov dh, 6
+    mov dl, 5
+    call Gotoxy
+    mov eax, magenta + (black*16)
+    call SetTextColor
+    mov edx, offset mario_line5
+    call WriteString
+    
+    ; Line 6 - Light Blue
+    mov dh, 7
+    mov dl, 5
+    call Gotoxy
+    mov eax, lightBlue + (black*16)
+    call SetTextColor
+    mov edx, offset mario_line6
+    call WriteString
+    
+    ret
+DrawMarioASCII ENDP
+
+; ============================================================
 ; PROCEDURE: PrintMainMenu
 ; ============================================================
 PrintMainMenu PROC
     call Clrscr
     
-    mov eax, red + (black*16)
+    ; Draw colorful MARIO ASCII art
+    call DrawMarioASCII
+    
+    ; Draw "BROS" subtitle
+    mov eax, magenta + (black*16)
     call SetTextColor
-    mov dh, 5
+    mov dh, 9
     mov dl, 30
     call Gotoxy
     mov edx, offset title1
@@ -1126,7 +1200,7 @@ PrintMainMenu PROC
     
     mov eax, yellow + (black*16)
     call SetTextColor
-    mov dh, 7
+    mov dh, 11
     mov dl, 30
     call Gotoxy
     mov edx, offset myRoll
@@ -1134,7 +1208,7 @@ PrintMainMenu PROC
     
     mov eax, green + (black*16)
     call SetTextColor
-    mov dh, 10
+    mov dh, 14
     mov dl, 30
     call Gotoxy
     mov edx, offset play_title
@@ -1142,7 +1216,7 @@ PrintMainMenu PROC
     
     mov eax, cyan + (black*16)
     call SetTextColor
-    mov dh, 12
+    mov dh, 16
     mov dl, 30
     call Gotoxy
     mov edx, offset score_prompt
@@ -1150,7 +1224,7 @@ PrintMainMenu PROC
     
     mov eax, red + (black*16)
     call SetTextColor
-    mov dh, 14
+    mov dh, 18
     mov dl, 30
     call Gotoxy
     mov edx, offset quitt
