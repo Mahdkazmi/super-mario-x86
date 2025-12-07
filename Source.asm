@@ -63,10 +63,17 @@ SetConsoleCP PROTO :DWORD
     mario_speed = 1           ; Movement speed
     
     ; === FIRE MASTER MARIO (Roll 2587 - Last Digit 7) ===
-    fire_active db 1          ; Starts with fire ability
+    fire_active db 0          ; Starts without fire until power-up collected
     ice_flower_x dd 15
     ice_flower_y dd 10
     ice_flower_visible db 1
+    
+    ; Fire flower power-up (random spawn)
+    fire_flower_x dd 0
+    fire_flower_y dd 0
+    fire_flower_visible db 0
+    fire_spawn_count = 4
+    fire_spawn_coords db 16,14, 33,12, 50,14, 18,10  ; x,y pairs on platforms
     
     ; Fireballs (max 2 on screen)
     fireball1_x dd -1         ; -1 = not active
@@ -91,6 +98,14 @@ SetConsoleCP PROTO :DWORD
     goomba2_alive db 1
     goomba2_frozen dd 0
     
+    ; Koopa Troopa (green)
+    koopa_x dd 35
+    koopa_y dd 17
+    koopa_dir db 1            ; 1=right, 2=left
+    koopa_state db 0          ; 0=walking,1=shell idle,2=shell left,3=shell right
+    koopa_alive db 1
+    koopa_frozen dd 0
+    
     ; === BOSS DATA (Level 2) ===
     boss_x dd 70
     boss_y dd 18
@@ -109,6 +124,7 @@ SetConsoleCP PROTO :DWORD
     ; 0 = empty, 1 = wall/platform, 2 = coin, 3 = ice flower
     ; 4 = pipe top-left, 5 = pipe top-right, 6 = pipe vertical side
     ; 7 = warp pipe entrance, 8 = pipe top-middle, 9 = pipe body fill
+    ; 10 = fire flower (grants fireballs)
     map_width = 80
     map_height = 24
     
@@ -287,6 +303,21 @@ InitializeLevel1 PROC
     add eax, 53
     mov [level1_map + eax], 3
     
+    ; Place fire flower randomly on platforms
+    mov fire_flower_visible, 1
+    mov eax, fire_spawn_count
+    call RandomRange                 ; 0..fire_spawn_count-1
+    mov ebx, eax
+    shl ebx, 1                       ; two bytes per entry (x,y)
+    movzx ecx, byte ptr [fire_spawn_coords + ebx]
+    mov fire_flower_x, ecx
+    movzx ecx, byte ptr [fire_spawn_coords + ebx + 1]
+    mov fire_flower_y, ecx
+    mov eax, fire_flower_y
+    imul eax, map_width
+    add eax, fire_flower_x
+    mov byte ptr [level1_map + eax], 10
+    
     ; === Add Pipes ===
     ; Pipe 1: Medium pipe at x=40, starting at y=15 (3 blocks tall)
     ; Top
@@ -405,6 +436,8 @@ DrawMap PROC
             je DrawPipeTopMid
             cmp ecx, 9
             je DrawPipeFill
+            cmp ecx, 10
+            je DrawFireFlower
             jmp DrawEmpty
             
             DrawWall:
@@ -432,6 +465,17 @@ DrawMap PROC
                 mov eax, lightCyan + (blue*16)
                 call SetTextColor
                 mov al, '*'
+                call WriteChar
+                pop eax
+                jmp NextTile
+            
+            DrawFireFlower:
+                cmp fire_flower_visible, 1
+                jne DrawEmpty
+                push eax
+                mov eax, lightRed + (blue*16)
+                call SetTextColor
+                mov al, 'F'
                 call WriteChar
                 pop eax
                 jmp NextTile
@@ -578,6 +622,40 @@ DrawEnemies PROC
     mov al, '@'
     call WriteChar
     SkipGoomba2:
+    
+    ; Draw Koopa Troopa
+    cmp koopa_alive, 1
+    jne SkipKoopa
+    mov dl, byte ptr koopa_x
+    mov dh, byte ptr koopa_y
+    call Gotoxy
+    
+    cmp koopa_frozen, 0
+    jle KoopaColorNormal
+    mov eax, lightCyan + (blue*16)
+    jmp KoopaColorSet
+    KoopaColorNormal:
+    movzx eax, koopa_state
+    cmp eax, 0
+    je KoopaGreen
+    mov eax, yellow + (blue*16)   ; Shell colors
+    jmp KoopaColorSet
+    KoopaGreen:
+    mov eax, green + (blue*16)
+    KoopaColorSet:
+    call SetTextColor
+    
+    movzx eax, koopa_state
+    cmp eax, 0
+    je DrawKoopaWalk
+    DrawKoopaShell:
+    mov al, 'O'
+    call WriteChar
+    jmp SkipKoopa
+    DrawKoopaWalk:
+    mov al, 'K'
+    call WriteChar
+    SkipKoopa:
     
     ret
 DrawEnemies ENDP
@@ -1151,6 +1229,11 @@ UpdateEnemies PROC
     dec goomba2_frozen
     Goomba2NotFrozen:
     
+    cmp koopa_frozen, 0
+    jle KoopaNotFrozen
+    dec koopa_frozen
+    KoopaNotFrozen:
+    
     ; Move Goomba 1 (patrols ground: columns 20-35)
     cmp goomba1_alive, 1
     jne SkipGoomba1Move
@@ -1239,6 +1322,107 @@ UpdateEnemies PROC
     mov goomba2_dir, 2
     SkipGoomba2Move:
     
+    ; Move Koopa Troopa
+    cmp koopa_alive, 1
+    jne SkipKoopaMove
+    cmp koopa_frozen, 0
+    jg SkipKoopaMove
+    
+    cmp koopa_state, 0
+    jne KoopaShellLogic
+    
+    ; Walking
+    movzx eax, koopa_dir
+    cmp eax, 1
+    je KoopaRight
+    ; Moving left
+    mov eax, koopa_x
+    dec eax
+    mov ebx, koopa_y
+    push ebx
+    push eax
+    call CheckCollisionAt
+    pop ebx
+    pop ecx
+    cmp al, 1
+    je KoopaHitLeft
+    mov koopa_x, ebx
+    cmp koopa_x, 25
+    jge SkipKoopaMove
+    KoopaHitLeft:
+    mov koopa_dir, 1
+    jmp SkipKoopaMove
+    
+    KoopaRight:
+    mov eax, koopa_x
+    inc eax
+    mov ebx, koopa_y
+    push ebx
+    push eax
+    call CheckCollisionAt
+    pop ebx
+    pop ecx
+    cmp al, 1
+    je KoopaHitRight
+    mov koopa_x, ebx
+    cmp koopa_x, 55
+    jle SkipKoopaMove
+    KoopaHitRight:
+    mov koopa_dir, 2
+    jmp SkipKoopaMove
+    
+    KoopaShellLogic:
+    cmp koopa_state, 1
+    je SkipKoopaMove          ; Shell idle
+    cmp koopa_state, 2
+    je KoopaShellLeft
+    cmp koopa_state, 3
+    je KoopaShellRight
+    jmp SkipKoopaMove
+    
+    KoopaShellLeft:
+    mov ecx, 2                ; shell moves 2 tiles per update
+    KoopaShellLeftLoop:
+        mov eax, koopa_x
+        dec eax
+        mov ebx, koopa_y
+        push ebx
+        push eax
+        call CheckCollisionAt
+        pop ebx
+        pop edx
+        cmp al, 1
+        je KoopaShellLeftHit
+        mov koopa_x, ebx
+        dec ecx
+        jnz KoopaShellLeftLoop
+        jmp SkipKoopaMove
+    KoopaShellLeftHit:
+    mov koopa_state, 3        ; bounce to the right
+    jmp SkipKoopaMove
+    
+    KoopaShellRight:
+    mov ecx, 2
+    KoopaShellRightLoop:
+        mov eax, koopa_x
+        inc eax
+        mov ebx, koopa_y
+        push ebx
+        push eax
+        call CheckCollisionAt
+        pop ebx
+        pop edx
+        cmp al, 1
+        je KoopaShellRightHit
+        mov koopa_x, ebx
+        dec ecx
+        jnz KoopaShellRightLoop
+        jmp SkipKoopaMove
+    KoopaShellRightHit:
+    mov koopa_state, 2        ; bounce to the left
+    
+    SkipKoopaMove:
+    
     ret
 UpdateEnemies ENDP
 
@@ -1291,6 +1475,83 @@ CheckCollisions PROC
     mov mario_x, 5
     mov mario_y, 17
     SkipGoomba2Coll:
+    
+    ; Check Mario vs Koopa
+    cmp koopa_alive, 1
+    jne SkipKoopaColl
+    mov eax, mario_x
+    cmp eax, koopa_x
+    jne SkipKoopaColl
+    mov eax, mario_y
+    cmp eax, koopa_y
+    jne SkipKoopaColl
+    cmp mario_velocity_y, 0
+    jle KoopaSideCollision
+    ; Stomped Koopa -> enter shell
+    mov koopa_state, 1
+    add score, 200
+    mov mario_velocity_y, -4
+    jmp SkipKoopaColl
+    
+    KoopaSideCollision:
+    cmp koopa_state, 1
+    je KickShell
+    cmp koopa_state, 2
+    je KoopaShellHurt
+    cmp koopa_state, 3
+    je KoopaShellHurt
+    ; Walking Koopa hurts
+    dec lives
+    mov mario_x, 5
+    mov mario_y, 17
+    jmp SkipKoopaColl
+    
+    KickShell:
+    mov eax, mario_x
+    cmp eax, koopa_x
+    jl KickShellRight
+    mov koopa_state, 2         ; kick left
+    mov koopa_dir, 2
+    jmp SkipKoopaColl
+    KickShellRight:
+    mov koopa_state, 3         ; kick right
+    mov koopa_dir, 1
+    jmp SkipKoopaColl
+    
+    KoopaShellHurt:
+    dec lives
+    mov mario_x, 5
+    mov mario_y, 17
+    SkipKoopaColl:
+    
+    ; Shell moving hits goombas
+    cmp koopa_state, 2
+    je ShellMoving
+    cmp koopa_state, 3
+    jne SkipShellHits
+    ShellMoving:
+        cmp goomba1_alive, 1
+        jne CheckShellGoomba2
+        mov eax, koopa_x
+        cmp eax, goomba1_x
+        jne CheckShellGoomba2
+        mov eax, koopa_y
+        cmp eax, goomba1_y
+        jne CheckShellGoomba2
+        mov goomba1_alive, 0
+        add score, 200
+    CheckShellGoomba2:
+        cmp goomba2_alive, 1
+        jne SkipShellHits
+        mov eax, koopa_x
+        cmp eax, goomba2_x
+        jne SkipShellHits
+        mov eax, koopa_y
+        cmp eax, goomba2_y
+        jne SkipShellHits
+        mov goomba2_alive, 0
+        add score, 200
+    SkipShellHits:
     
     ; Check fireballs vs enemies
     ; Fireball 1 vs Goomba 1
@@ -1359,6 +1620,38 @@ CheckCollisions PROC
     add score, 200
     SkipFire2Goomba2:
     
+    ; Fireball 1 vs Koopa
+    cmp fireball1_dir, 0
+    je SkipFire1Koopa
+    cmp koopa_alive, 1
+    jne SkipFire1Koopa
+    mov eax, fireball1_x
+    cmp eax, koopa_x
+    jne SkipFire1Koopa
+    mov eax, fireball1_y
+    cmp eax, koopa_y
+    jne SkipFire1Koopa
+    mov koopa_alive, 0
+    mov fireball1_dir, 0
+    add score, 200
+    SkipFire1Koopa:
+    
+    ; Fireball 2 vs Koopa
+    cmp fireball2_dir, 0
+    je SkipFire2Koopa
+    cmp koopa_alive, 1
+    jne SkipFire2Koopa
+    mov eax, fireball2_x
+    cmp eax, koopa_x
+    jne SkipFire2Koopa
+    mov eax, fireball2_y
+    cmp eax, koopa_y
+    jne SkipFire2Koopa
+    mov koopa_alive, 0
+    mov fireball2_dir, 0
+    add score, 200
+    SkipFire2Koopa:
+    
     ; Check coin collection
     mov eax, mario_y
     imul eax, map_width
@@ -1371,6 +1664,20 @@ CheckCollisions PROC
     add score, 200
     NoCoin:
     
+    ; Check fire flower collection
+    cmp ecx, 10
+    jne NoFireFlower
+    mov byte ptr [level1_map + eax], 0
+    mov fire_flower_visible, 0
+    mov fire_active, 1
+    mov fireball1_dir, 0
+    mov fireball2_dir, 0
+    mov fireball1_x, -1
+    mov fireball1_y, -1
+    mov fireball2_x, -1
+    mov fireball2_y, -1
+    NoFireFlower:
+    
     ; Check ice flower collection
     cmp ecx, 3
     jne NoIceFlower
@@ -1381,6 +1688,7 @@ CheckCollisions PROC
     ; HUD seconds tick every 10 frames, so 5 ticks ≈ 4 HUD seconds (5*8=40 frames).
     mov goomba1_frozen, 5
     mov goomba2_frozen, 5
+    mov koopa_frozen, 5
     NoIceFlower:
     
     ret
@@ -1690,6 +1998,7 @@ main PROC
     mov eax, 437                     ; OEM US code page with box chars
     invoke SetConsoleOutputCP, eax
     invoke SetConsoleCP, eax
+    call Randomize
     
     ; Main menu loop
     MenuLoop:
@@ -1721,13 +2030,29 @@ main PROC
         mov score, 0
         mov game_timer, 110     ; Start with 110 seconds (1:50)
         mov frame_counter, 0
-        mov fire_active, 1      ; Fire Master Mario starts with fire
+        mov fire_active, 0
         mov fireball1_dir, 0
         mov fireball2_dir, 0
+        mov fireball1_x, -1
+        mov fireball1_y, -1
+        mov fireball2_x, -1
+        mov fireball2_y, -1
         mov goomba1_alive, 1
         mov goomba2_alive, 1
         mov goomba1_frozen, 0
         mov goomba2_frozen, 0
+        mov goomba1_x, 25
+        mov goomba1_y, 17
+        mov goomba1_dir, 1
+        mov goomba2_x, 60
+        mov goomba2_y, 17
+        mov goomba2_dir, 2
+        mov koopa_alive, 1
+        mov koopa_state, 0
+        mov koopa_dir, 1
+        mov koopa_frozen, 0
+        mov koopa_x, 35
+        mov koopa_y, 17
         mov ice_flower_visible, 1
         mov game_state, 1
         mov move_counter, 0
