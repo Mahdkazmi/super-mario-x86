@@ -29,6 +29,7 @@ SetConsoleCP PROTO :DWORD
     quitt db "Quit (Q)",0
     gameOver1 db "GAME OVER",0
     gameWon1 db "Level 1 Completed",0
+    gameWon2 db "Level 2 Completed",0
     instr_title db "INSTRUCTIONS",0
     instr_move db "Move: A/D or Left/Right Arrows",0
     instr_jump db "Jump: W or Space",0
@@ -102,7 +103,7 @@ SetConsoleCP PROTO :DWORD
     mushroom_spawn_coords db \
         16,14, 33,12, 50,14, 18,10, 25,14, \
         52,12, 67,10, 110,15, 120,8, 32,9, 140,17
-    flag_x dd 150
+    flag_x dd 158             ; Flagpole positioned after axe and bridge
     level_complete db 0
     
     ; === LEVEL 2 FIRE CHAINS ===
@@ -759,14 +760,16 @@ FirePlace2:
     mov ecx, mushroom_spawn_count
 MushFind2:
     cmp ecx, 0
-    jle MushPlace2
+    jle MushPlace2_Default
     mov ebx, edi
     shl ebx, 1
     movzx eax, byte ptr [mushroom_spawn_coords + ebx]
     mov mushroom_x, eax
     movzx eax, byte ptr [mushroom_spawn_coords + ebx + 1]
     mov mushroom_y, eax
+    ; Check if position below is solid (platform)
     mov eax, mushroom_y
+    inc eax
     imul eax, map_width
     add eax, mushroom_x
     movzx ebx, byte ptr [level1_map + eax]
@@ -779,6 +782,12 @@ MushFind2:
 MushCont2:
     dec ecx
     jmp MushFind2
+MushPlace2_Default:
+    ; Fallback: place at first coordinate
+    movzx eax, byte ptr [mushroom_spawn_coords]
+    mov mushroom_x, eax
+    movzx eax, byte ptr [mushroom_spawn_coords + 1]
+    mov mushroom_y, eax
 MushPlace2:
     mov eax, mushroom_y
     imul eax, map_width
@@ -3500,7 +3509,14 @@ GameLoop PROC
         mov dh, 11
         mov dl, 30
         call Gotoxy
+        ; Show appropriate level completion message
+        cmp level, 2
+        je ShowLevel2Complete
         mov edx, offset gameWon1
+        jmp ShowWinMessage
+        ShowLevel2Complete:
+        mov edx, offset gameWon2
+        ShowWinMessage:
         call WriteString
         
         ; Show score
