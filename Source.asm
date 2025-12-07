@@ -29,6 +29,19 @@ SetConsoleCP PROTO :DWORD
     quitt db "Quit (Q)",0
     gameOver1 db "GAME OVER",0
     gameWon1 db "YOU WIN!",0
+    instr_title db "INSTRUCTIONS",0
+    instr_move db "Move: A/D or Left/Right Arrows",0
+    instr_jump db "Jump: W or Space",0
+    instr_shoot db "Shoot: F (after fire flower pickup)",0
+    instr_pause db "Pause: R",0
+    instr_quit db "Quit: Q",0
+    instr_power db "Power-ups: Fire flower = fireballs, Ice flower = freeze",0
+    instr_divider db "---------------",0
+    level_select_title db "Select Level (1 or 2)",0
+    level_select_hint db "Level 2 uses placeholder layout for now",0
+    level_select_prompt db "Press 1 or 2 to start",0
+    level_opt1 db "1) Level 1 - Grassland ",0
+    level_opt2 db "2) Level 2 - In development (placeholder)",0
     
     ; === PAUSE MENU STRINGS ===
     pause_title db "PAUSED",0
@@ -388,6 +401,16 @@ InitializeLevel1 PROC
     
     ret
 InitializeLevel1 ENDP
+
+; ============================================================
+; PROCEDURE: InitializeLevel2
+; Placeholder: currently reuses level 1 layout
+; ============================================================
+InitializeLevel2 PROC
+    call InitializeLevel1
+    mov level, 2
+    ret
+InitializeLevel2 ENDP
 
 ; ============================================================
 ; PROCEDURE: DrawMap
@@ -1848,6 +1871,127 @@ PrintMainMenu PROC
 PrintMainMenu ENDP
 
 ; ============================================================
+; PROCEDURE: ShowInstructionsAndSelectLevel
+; Displays controls and lets player choose level 1 or 2
+; ============================================================
+ShowInstructionsAndSelectLevel PROC
+    call Clrscr
+    
+    ; Title
+    mov eax, yellow + (black*16)
+    call SetTextColor
+    mov dh, 2
+    mov dl, 30
+    call Gotoxy
+    mov edx, offset instr_title
+    call WriteString
+    
+    ; Divider under title
+    mov eax, white + (black*16)
+    call SetTextColor
+    mov dh, 3
+    mov dl, 28
+    call Gotoxy
+    mov edx, offset instr_divider
+    call WriteString
+    
+    ; Controls
+    mov eax, white + (black*16)
+    call SetTextColor
+    
+    mov dh, 4
+    mov dl, 8
+    call Gotoxy
+    mov edx, offset instr_move
+    call WriteString
+    
+    mov dh, 5
+    mov dl, 8
+    call Gotoxy
+    mov edx, offset instr_jump
+    call WriteString
+    
+    mov dh, 6
+    mov dl, 8
+    call Gotoxy
+    mov edx, offset instr_shoot
+    call WriteString
+    
+    mov dh, 7
+    mov dl, 8
+    call Gotoxy
+    mov edx, offset instr_pause
+    call WriteString
+    
+    mov dh, 8
+    mov dl, 8
+    call Gotoxy
+    mov edx, offset instr_quit
+    call WriteString
+    
+    mov dh, 9
+    mov dl, 8
+    call Gotoxy
+    mov edx, offset instr_power
+    call WriteString
+    
+    ; Level selection (spaced lower, separate rows)
+    mov eax, lightGreen + (black*16)
+    call SetTextColor
+    mov dh, 14
+    mov dl, 20
+    call Gotoxy
+    mov edx, offset level_select_title
+    call WriteString
+    
+    mov eax, cyan + (black*16)
+    call SetTextColor
+    mov dh, 15
+    mov dl, 20
+    call Gotoxy
+    mov edx, offset level_select_hint
+    call WriteString
+    
+    mov eax, white + (black*16)
+    call SetTextColor
+    mov dh, 17
+    mov dl, 24
+    call Gotoxy
+    mov edx, offset level_opt1
+    call WriteString
+    
+    mov dh, 18
+    mov dl, 24
+    call Gotoxy
+    mov edx, offset level_opt2
+    call WriteString
+    
+    mov eax, yellow + (black*16)
+    call SetTextColor
+    mov dh, 20
+    mov dl, 24
+    call Gotoxy
+    mov edx, offset level_select_prompt
+    call WriteString
+    
+    ; Wait for selection
+    LevelSelectLoop:
+        call ReadChar
+        cmp al, '1'
+        je SelectLevel1
+        cmp al, '2'
+        je SelectLevel2
+        jmp LevelSelectLoop
+    
+    SelectLevel1:
+        mov level, 1
+        ret
+    SelectLevel2:
+        mov level, 2
+        ret
+ShowInstructionsAndSelectLevel ENDP
+
+; ============================================================
 ; PROCEDURE: GameLoop
 ; Main game loop
 ; ============================================================
@@ -2018,8 +2162,17 @@ main PROC
         jmp MenuLoop
     
     StartGame:
-        ; Initialize level
+        ; Instructions + level select
+        call ShowInstructionsAndSelectLevel
+        
+        ; Initialize selected level (2 currently reuses level 1 layout)
+        cmp level, 2
+        je InitLevel2Start
         call InitializeLevel1
+        jmp InitDone
+        InitLevel2Start:
+        call InitializeLevel2
+        InitDone:
         
         ; Reset game state
         mov mario_x, 5
