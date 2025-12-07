@@ -137,7 +137,7 @@ SetConsoleCP PROTO :DWORD
     ; 0 = empty, 1 = wall/platform, 2 = coin, 3 = ice flower
     ; 4 = pipe top-left, 5 = pipe top-right, 6 = pipe vertical side
     ; 7 = warp pipe entrance, 8 = pipe top-middle, 9 = pipe body fill
-    ; 10 = fire flower (grants fireballs)
+    ; 10 = fire flower (grants fireballs), 11 = cloud (decoration)
     map_width = 80
     map_height = 24
     
@@ -331,6 +331,53 @@ InitializeLevel1 PROC
     add eax, fire_flower_x
     mov byte ptr [level1_map + eax], 10
     
+    ; Add decorative clouds (non-colliding)
+    ; Cloud 1 (x=12..14, y=5..6)
+    mov eax, map_width
+    imul eax, 5
+    add eax, 12
+    mov byte ptr [level1_map + eax], 11
+    inc eax
+    mov byte ptr [level1_map + eax], 11
+    inc eax
+    mov byte ptr [level1_map + eax], 11
+    mov eax, map_width
+    imul eax, 6
+    add eax, 13
+    mov byte ptr [level1_map + eax], 11
+    
+    ; Cloud 2 (x=42..45, y=4..5)
+    mov eax, map_width
+    imul eax, 4
+    add eax, 42
+    mov byte ptr [level1_map + eax], 11
+    inc eax
+    mov byte ptr [level1_map + eax], 11
+    inc eax
+    mov byte ptr [level1_map + eax], 11
+    inc eax
+    mov byte ptr [level1_map + eax], 11
+    mov eax, map_width
+    imul eax, 5
+    add eax, 43
+    mov byte ptr [level1_map + eax], 11
+    inc eax
+    mov byte ptr [level1_map + eax], 11
+    
+    ; Cloud 3 (x=68..70, y=6..7)
+    mov eax, map_width
+    imul eax, 6
+    add eax, 68
+    mov byte ptr [level1_map + eax], 11
+    inc eax
+    mov byte ptr [level1_map + eax], 11
+    inc eax
+    mov byte ptr [level1_map + eax], 11
+    mov eax, map_width
+    imul eax, 7
+    add eax, 69
+    mov byte ptr [level1_map + eax], 11
+    
     ; === Add Pipes ===
     ; Pipe 1: Medium pipe at x=40, starting at y=15 (3 blocks tall)
     ; Top
@@ -461,6 +508,8 @@ DrawMap PROC
             je DrawPipeFill
             cmp ecx, 10
             je DrawFireFlower
+            cmp ecx, 11
+            je DrawCloud
             jmp DrawEmpty
             
             DrawWall:
@@ -499,6 +548,15 @@ DrawMap PROC
                 mov eax, lightRed + (blue*16)
                 call SetTextColor
                 mov al, 'F'
+                call WriteChar
+                pop eax
+                jmp NextTile
+            
+            DrawCloud:
+                push eax
+                mov eax, white + (blue*16)
+                call SetTextColor
+                mov al, 219        ; solid block for compact bright cloud
                 call WriteChar
                 pop eax
                 jmp NextTile
