@@ -71,7 +71,9 @@ SetConsoleCP PROTO :DWORD
     mario_y dd 18
     mario_velocity_y dd 0     ; For jump physics
     mario_on_ground db 1      ; 1 if on ground, 0 if in air
-    mario_jump_power = -4     ; Negative = upward (slightly higher jump)
+    normal_jump_power dd -4   ; base jump
+    super_jump_power dd -5    ; boosted jump
+    mario_jump_power dd -4    ; current jump power (mutable)
     gravity = 1               ; Pull down
     mario_speed = 1           ; Movement speed
     
@@ -80,14 +82,26 @@ SetConsoleCP PROTO :DWORD
     ice_flower_x dd 15
     ice_flower_y dd 10
     ice_flower_visible db 1
+    super_active db 0         ; Super mushroom effect flag
     
     ; Fire flower power-up (random spawn)
     fire_flower_x dd 0
     fire_flower_y dd 0
     fire_flower_visible db 0
-    fire_spawn_count = 4
-    fire_spawn_coords db 16,14, 33,12, 50,14, 18,10  ; x,y pairs on platforms
+    fire_spawn_count = 10
+    fire_spawn_coords db \
+        16,14, 33,12, 50,14, 18,10, 25,14, \
+        52,12, 67,10, 110,15, 120,8, 32,9, 140,17   ; platform positions both levels
     fire_shots_left db 0
+    
+    ; Super mushroom power-up (random spawn)
+    mushroom_x dd 0
+    mushroom_y dd 0
+    mushroom_visible db 0
+    mushroom_spawn_count = 10
+    mushroom_spawn_coords db \
+        16,14, 33,12, 50,14, 18,10, 25,14, \
+        52,12, 67,10, 110,15, 120,8, 32,9, 140,17
     flag_x dd 150
     level_complete db 0
     
@@ -96,6 +110,14 @@ SetConsoleCP PROTO :DWORD
     fire_chain1_anchor_y dd 12
     fire_chain2_anchor_x dd 110
     fire_chain2_anchor_y dd 14
+    
+    ; === MOVING PLATFORMS (Level 2) ===
+    moving_plat_count = 3
+    moving_plat_x dd 60, 95, 125
+    moving_plat_y dd 11, 13, 9
+    moving_plat_dir db 1, 2, 1           ; 1=right, 2=left
+    moving_plat_left dd 55, 90, 120
+    moving_plat_right dd 70, 110, 135
     
     ; Fireballs (max 2 on screen)
     fireball1_x dd -1         ; -1 = not active
@@ -147,7 +169,7 @@ SetConsoleCP PROTO :DWORD
     ; 4 = pipe top-left, 5 = pipe top-right, 6 = pipe vertical side
     ; 7 = warp pipe entrance, 8 = pipe top-middle, 9 = pipe body fill
     ; 10 = fire flower (grants fireballs), 11 = cloud (decoration)
-    ; 12 = flag pole, 13 = flag top, 14 = lava
+    ; 12 = flag pole, 13 = flag top, 14 = lava, 15 = super mushroom
     map_width = 160
     map_height = 24
     viewport_width = 78
@@ -398,17 +420,70 @@ InitializeLevel1 PROC
     ; Place fire flower randomly on platforms
     mov fire_flower_visible, 1
     mov eax, fire_spawn_count
-    call RandomRange                 ; 0..fire_spawn_count-1
-    mov ebx, eax
-    shl ebx, 1                       ; two bytes per entry (x,y)
-    movzx ecx, byte ptr [fire_spawn_coords + ebx]
-    mov fire_flower_x, ecx
-    movzx ecx, byte ptr [fire_spawn_coords + ebx + 1]
-    mov fire_flower_y, ecx
+    call RandomRange                 ; 0..count-1
+    mov edi, eax
+    mov ecx, fire_spawn_count
+FireFind1:
+    cmp ecx, 0
+    jle FirePlace1
+    mov ebx, edi
+    shl ebx, 1
+    movzx eax, byte ptr [fire_spawn_coords + ebx]
+    mov fire_flower_x, eax
+    movzx eax, byte ptr [fire_spawn_coords + ebx + 1]
+    mov fire_flower_y, eax
+    mov eax, fire_flower_y
+    imul eax, map_width
+    add eax, fire_flower_x
+    movzx ebx, byte ptr [level1_map + eax]
+    cmp ebx, 1              ; ensure platform tile
+    je FirePlace1
+    inc edi
+    cmp edi, fire_spawn_count
+    jl FireCont1
+    mov edi, 0
+FireCont1:
+    dec ecx
+    jmp FireFind1
+FirePlace1:
     mov eax, fire_flower_y
     imul eax, map_width
     add eax, fire_flower_x
     mov byte ptr [level1_map + eax], 10
+    
+    ; Place mushroom randomly on platforms
+    mov mushroom_visible, 1
+    mov eax, mushroom_spawn_count
+    call RandomRange
+    mov edi, eax
+    mov ecx, mushroom_spawn_count
+MushFind1:
+    cmp ecx, 0
+    jle MushPlace1
+    mov ebx, edi
+    shl ebx, 1
+    movzx eax, byte ptr [mushroom_spawn_coords + ebx]
+    mov mushroom_x, eax
+    movzx eax, byte ptr [mushroom_spawn_coords + ebx + 1]
+    mov mushroom_y, eax
+    mov eax, mushroom_y
+    imul eax, map_width
+    add eax, mushroom_x
+    movzx ebx, byte ptr [level1_map + eax]
+    cmp ebx, 1
+    je MushPlace1
+    inc edi
+    cmp edi, mushroom_spawn_count
+    jl MushCont1
+    mov edi, 0
+MushCont1:
+    dec ecx
+    jmp MushFind1
+MushPlace1:
+    mov eax, mushroom_y
+    imul eax, map_width
+    add eax, mushroom_x
+    mov byte ptr [level1_map + eax], 15
     
     ; Add decorative clouds (non-colliding) only for level 1
     cmp level, 1
@@ -618,6 +693,93 @@ InitializeLevel2 PROC
         cmp eax, map_height
         jl GroundLoop2
     
+    ; Ceiling stone rows (rows 1-2) to give a cave feel
+    mov eax, 1
+    CeilRowLoop2:
+        mov ebx, 0
+        CeilColLoop2:
+            push eax
+            mov eax, map_width
+            imul eax, dword ptr [esp]
+            add eax, ebx
+            mov [level1_map + eax], 1
+            pop eax
+            
+            inc ebx
+            cmp ebx, map_width
+            jl CeilColLoop2
+        inc eax
+        cmp eax, 3
+        jl CeilRowLoop2
+    
+    ; Place fire flower randomly (level 2) on platforms
+    mov fire_flower_visible, 1
+    mov eax, fire_spawn_count
+    call RandomRange
+    mov edi, eax
+    mov ecx, fire_spawn_count
+FireFind2:
+    cmp ecx, 0
+    jle FirePlace2
+    mov ebx, edi
+    shl ebx, 1
+    movzx eax, byte ptr [fire_spawn_coords + ebx]
+    mov fire_flower_x, eax
+    movzx eax, byte ptr [fire_spawn_coords + ebx + 1]
+    mov fire_flower_y, eax
+    mov eax, fire_flower_y
+    imul eax, map_width
+    add eax, fire_flower_x
+    movzx ebx, byte ptr [level1_map + eax]
+    cmp ebx, 1
+    je FirePlace2
+    inc edi
+    cmp edi, fire_spawn_count
+    jl FireCont2
+    mov edi, 0
+FireCont2:
+    dec ecx
+    jmp FireFind2
+FirePlace2:
+    mov eax, fire_flower_y
+    imul eax, map_width
+    add eax, fire_flower_x
+    mov byte ptr [level1_map + eax], 10
+    
+    ; Place mushroom randomly (level 2) on platforms
+    mov mushroom_visible, 1
+    mov eax, mushroom_spawn_count
+    call RandomRange
+    mov edi, eax
+    mov ecx, mushroom_spawn_count
+MushFind2:
+    cmp ecx, 0
+    jle MushPlace2
+    mov ebx, edi
+    shl ebx, 1
+    movzx eax, byte ptr [mushroom_spawn_coords + ebx]
+    mov mushroom_x, eax
+    movzx eax, byte ptr [mushroom_spawn_coords + ebx + 1]
+    mov mushroom_y, eax
+    mov eax, mushroom_y
+    imul eax, map_width
+    add eax, mushroom_x
+    movzx ebx, byte ptr [level1_map + eax]
+    cmp ebx, 1
+    je MushPlace2
+    inc edi
+    cmp edi, mushroom_spawn_count
+    jl MushCont2
+    mov edi, 0
+MushCont2:
+    dec ecx
+    jmp MushFind2
+MushPlace2:
+    mov eax, mushroom_y
+    imul eax, map_width
+    add eax, mushroom_x
+    mov byte ptr [level1_map + eax], 15
+    
     ; Lava pits
     ; Pit 1: columns 36-37 (very narrow)
     mov ebx, 36
@@ -713,6 +875,46 @@ InitializeLevel2 PROC
         cmp ebx, 121
         jl PlatC
     
+    ; Small stone platforms (Level 2 extras)
+    ; PlatD: Row 9, columns 30-34
+    mov ebx, 30
+    PlatD:
+        push eax
+        mov eax, map_width
+        imul eax, 9
+        add eax, ebx
+        mov [level1_map + eax], 1
+        pop eax
+        inc ebx
+        cmp ebx, 35
+        jl PlatD
+    
+    ; PlatE: Row 10, columns 65-69
+    mov ebx, 65
+    PlatE:
+        push eax
+        mov eax, map_width
+        imul eax, 10
+        add eax, ebx
+        mov [level1_map + eax], 1
+        pop eax
+        inc ebx
+        cmp ebx, 70
+        jl PlatE
+    
+    ; PlatF: Row 8, columns 118-122 (near boss area approach)
+    mov ebx, 118
+    PlatF:
+        push eax
+        mov eax, map_width
+        imul eax, 8
+        add eax, ebx
+        mov [level1_map + eax], 1
+        pop eax
+        inc ebx
+        cmp ebx, 123
+        jl PlatF
+    
     ; Boss bridge over lava (row 17, columns 140-156)
     mov ebx, 140
     BridgeLoop:
@@ -806,12 +1008,14 @@ DrawMap PROC
             je DrawFireFlower
             cmp ecx, 11
             je DrawCloud
-            cmp ecx, 12
-            je DrawFlagPole
-            cmp ecx, 13
-            je DrawFlagTop
-            cmp ecx, 14
-            je DrawLava
+    cmp ecx, 12
+    je DrawFlagPole
+    cmp ecx, 13
+    je DrawFlagTop
+    cmp ecx, 14
+    je DrawLava
+    cmp ecx, 15
+    je DrawMushroom
             jmp DrawEmpty
             
             DrawWall:
@@ -898,6 +1102,15 @@ DrawMap PROC
                 mov eax, lightRed + (black*16)
                 call SetTextColor
                 mov al, 247        ; medium shade
+                call WriteChar
+                pop eax
+                jmp NextTile
+            
+            DrawMushroom:
+                push eax
+                mov eax, red + (black*16)
+                call SetTextColor
+                mov al, 'U'
                 call WriteChar
                 pop eax
                 jmp NextTile
@@ -1205,6 +1418,41 @@ DrawFireballs PROC
     
     ret
 DrawFireballs ENDP
+
+; ============================================================
+; PROCEDURE: DrawMovingPlatforms (Level 2)
+; ============================================================
+DrawMovingPlatforms PROC
+    cmp level, 2
+    jne SkipMovePlatDraw
+    
+    mov ecx, 0
+PlatDrawLoop:
+    cmp ecx, moving_plat_count
+    jge SkipMovePlatDraw
+    
+    mov eax, [moving_plat_x + ecx*4]
+    sub eax, camera_x
+    cmp eax, 0
+    jl NextPlatDraw
+    cmp eax, viewport_width
+    jge NextPlatDraw
+    mov dl, al
+    mov edx, [moving_plat_y + ecx*4]
+    mov dh, dl    ; temp? fix below
+    mov dh, byte ptr [moving_plat_y + ecx*4]
+    call Gotoxy
+    mov eax, lightGray + (black*16) ; match stone platform color
+    call SetTextColor
+    mov al, 219                ; solid block like normal platforms
+    call WriteChar
+NextPlatDraw:
+    inc ecx
+    jmp PlatDrawLoop
+    
+SkipMovePlatDraw:
+    ret
+DrawMovingPlatforms ENDP
 
 ; ============================================================
 ; PROCEDURE: DrawBoss (Level 2)
@@ -1520,6 +1768,26 @@ CheckCollisionBelow PROC
     je HasCollision
     cmp ecx, 9             ; Pipe body fill
     je HasCollision
+    ; Moving platforms (level 2)
+    cmp level, 2
+    jne NoMovePlatB
+    mov ecx, 0
+CheckBelowMovePlatLoop:
+    cmp ecx, moving_plat_count
+    jge NoMovePlatB
+    mov eax, mario_x
+    cmp eax, [moving_plat_x + ecx*4]
+    jne NextMovePlatB
+    mov eax, mario_y
+    inc eax
+    cmp eax, [moving_plat_y + ecx*4]
+    jne NextMovePlatB
+    mov al, 1
+    ret
+NextMovePlatB:
+    inc ecx
+    jmp CheckBelowMovePlatLoop
+NoMovePlatB:
     
     NoCollision:
     mov al, 0
@@ -1560,6 +1828,26 @@ CheckCollisionAbove PROC
     je HasCollisionAbove
     cmp ecx, 9             ; Pipe body fill
     je HasCollisionAbove
+    ; Moving platforms (level 2)
+    cmp level, 2
+    jne NoMovePlatA
+    mov ecx, 0
+CheckAboveMovePlatLoop:
+    cmp ecx, moving_plat_count
+    jge NoMovePlatA
+    mov eax, mario_x
+    cmp eax, [moving_plat_x + ecx*4]
+    jne NextMovePlatA
+    mov eax, mario_y
+    dec eax
+    cmp eax, [moving_plat_y + ecx*4]
+    jne NextMovePlatA
+    mov al, 1
+    ret
+NextMovePlatA:
+    inc ecx
+    jmp CheckAboveMovePlatLoop
+NoMovePlatA:
     
     NoCollisionAbove:
     mov al, 0
@@ -1631,6 +1919,23 @@ CheckCollisionAt PROC
     je HasCollision2
     cmp ecx, 9             ; Pipe body fill
     je HasCollision2
+    ; Moving platforms (level 2)
+    cmp level, 2
+    jne NoMovePlatAt
+    mov ecx, 0
+CheckAtMovePlatLoop:
+    cmp ecx, moving_plat_count
+    jge NoMovePlatAt
+    cmp eax, [moving_plat_x + ecx*4]
+    jne NextMovePlatAt
+    cmp ebx, [moving_plat_y + ecx*4]
+    jne NextMovePlatAt
+    mov al, 1
+    ret
+NextMovePlatAt:
+    inc ecx
+    jmp CheckAtMovePlatLoop
+NoMovePlatAt:
     
     mov al, 0
     ret
@@ -2002,6 +2307,28 @@ UpdateEnemies PROC
     jle Goomba2NotFrozen
     dec goomba2_frozen
     Goomba2NotFrozen:
+    
+    ; Move moving platform (level 2)
+    cmp level, 2
+    jne SkipMovePlatUpdate
+    movzx eax, moving_plat_dir
+    cmp eax, 1
+    jne PlatMoveLeft
+    inc moving_plat_x
+    mov eax, moving_plat_x
+    cmp eax, moving_plat_right
+    jle SkipMovePlatUpdate
+    mov moving_plat_dir, 2
+    dec moving_plat_x
+    jmp SkipMovePlatUpdate
+PlatMoveLeft:
+    dec moving_plat_x
+    mov eax, moving_plat_x
+    cmp eax, moving_plat_left
+    jge SkipMovePlatUpdate
+    mov moving_plat_dir, 1
+    inc moving_plat_x
+SkipMovePlatUpdate:
     
     cmp koopa_frozen, 0
     jle KoopaNotFrozen
@@ -2508,6 +2835,17 @@ CheckCollisions PROC
     add score, 200
     NoCoin:
     
+    ; Super mushroom pickup
+    cmp ecx, 15
+    jne NoMushroom
+    mov byte ptr [level1_map + eax], 0
+    mov mushroom_visible, 0
+    inc lives
+    mov super_active, 1
+    mov eax, super_jump_power
+    mov mario_jump_power, eax
+    NoMushroom:
+    
     ; Check fire flower collection
     cmp ecx, 10
     jne NoFireFlower
@@ -2553,6 +2891,9 @@ CheckCollisions PROC
     mov mario_y, 17
     mov mario_velocity_y, 0
     mov mario_on_ground, 1
+    mov super_active, 0
+    mov eax, normal_jump_power
+    mov mario_jump_power, eax
     
     ret
 CheckCollisions ENDP
@@ -2846,6 +3187,7 @@ GameLoop PROC
         call DrawMap
         call DrawHUD
             call DrawFireChains
+            call DrawMovingPlatforms
         call DrawMario
         call DrawEnemies
             call DrawBoss
@@ -3100,12 +3442,16 @@ main PROC
         mov fireball1_y, -1
         mov fireball2_x, -1
         mov fireball2_y, -1
-    mov goomba1_frozen, 0
-    mov goomba2_frozen, 0
-    mov koopa_frozen, 0
-    mov camera_x, 0
-    mov game_state, 1
-    mov move_counter, 0
+        mov super_active, 0
+        mov mushroom_visible, 0
+        mov eax, normal_jump_power
+        mov mario_jump_power, eax
+        mov goomba1_frozen, 0
+        mov goomba2_frozen, 0
+        mov koopa_frozen, 0
+        mov camera_x, 0
+        mov game_state, 1
+        mov move_counter, 0
     
     cmp level, 2
     jne InitLevel1Actors
