@@ -28,7 +28,7 @@ SetConsoleCP PROTO :DWORD
     score_prompt db "HighScores (H)",0
     quitt db "Quit (Q)",0
     gameOver1 db "GAME OVER",0
-    gameWon1 db "YOU WIN!",0
+    gameWon1 db "Level 1 Completed",0
     instr_title db "INSTRUCTIONS",0
     instr_move db "Move: A/D or Left/Right Arrows",0
     instr_jump db "Jump: W or Space",0
@@ -88,6 +88,8 @@ SetConsoleCP PROTO :DWORD
     fire_spawn_count = 4
     fire_spawn_coords db 16,14, 33,12, 50,14, 18,10  ; x,y pairs on platforms
     fire_shots_left db 0
+    flag_x dd 150
+    level_complete db 0
     
     ; Fireballs (max 2 on screen)
     fireball1_x dd -1         ; -1 = not active
@@ -139,11 +141,16 @@ SetConsoleCP PROTO :DWORD
     ; 4 = pipe top-left, 5 = pipe top-right, 6 = pipe vertical side
     ; 7 = warp pipe entrance, 8 = pipe top-middle, 9 = pipe body fill
     ; 10 = fire flower (grants fireballs), 11 = cloud (decoration)
-    map_width = 80
+    ; 12 = flag pole, 13 = flag top
+    map_width = 160
     map_height = 24
+    viewport_width = 78
     
     ; Simplified level map (we'll build this procedurally)
     level1_map db (map_height * map_width) dup(0)
+    
+    ; === CAMERA ===
+    camera_x dd 0
     
     ; === TIMING ===
     move_counter dd 0
@@ -259,6 +266,45 @@ InitializeLevel1 PROC
         cmp ebx, 57
         jl Plat5Loop
     
+    ; Platform 6: Row 14, columns 90-108
+    mov ebx, 90
+    Plat6Loop:
+        push eax
+        mov eax, map_width
+        imul eax, 14
+        add eax, ebx
+        mov [level1_map + eax], 1
+        pop eax
+        inc ebx
+        cmp ebx, 109
+        jl Plat6Loop
+    
+    ; Platform 7: Row 12, columns 118-134
+    mov ebx, 118
+    Plat7Loop:
+        push eax
+        mov eax, map_width
+        imul eax, 12
+        add eax, ebx
+        mov [level1_map + eax], 1
+        pop eax
+        inc ebx
+        cmp ebx, 135
+        jl Plat7Loop
+    
+    ; Platform 8: Row 16, columns 136-148 (approach to flag)
+    mov ebx, 136
+    Plat8Loop:
+        push eax
+        mov eax, map_width
+        imul eax, 16
+        add eax, ebx
+        mov [level1_map + eax], 1
+        pop eax
+        inc ebx
+        cmp ebx, 149
+        jl Plat8Loop
+    
     ; Add coins on Platform 1
     mov ebx, 11
     Coin1Loop:
@@ -310,6 +356,32 @@ InitializeLevel1 PROC
         inc ebx
         cmp ebx, 20
         jl Coin4Loop
+    
+    ; Coins on Platform 6
+    mov ebx, 92
+    Coin6Loop:
+        push eax
+        mov eax, map_width
+        imul eax, 13
+        add eax, ebx
+        mov [level1_map + eax], 2
+        pop eax
+        inc ebx
+        cmp ebx, 107
+        jl Coin6Loop
+    
+    ; Coins on Platform 7
+    mov ebx, 120
+    Coin7Loop:
+        push eax
+        mov eax, map_width
+        imul eax, 11
+        add eax, ebx
+        mov [level1_map + eax], 2
+        pop eax
+        inc ebx
+        cmp ebx, 133
+        jl Coin7Loop
     
     ; Place ice flower on high platform
     mov eax, map_width
@@ -378,6 +450,59 @@ InitializeLevel1 PROC
     imul eax, 7
     add eax, 69
     mov byte ptr [level1_map + eax], 11
+    
+    ; Cloud 4 (x=100..103, y=5..6)
+    mov eax, map_width
+    imul eax, 5
+    add eax, 100
+    mov byte ptr [level1_map + eax], 11
+    inc eax
+    mov byte ptr [level1_map + eax], 11
+    inc eax
+    mov byte ptr [level1_map + eax], 11
+    inc eax
+    mov byte ptr [level1_map + eax], 11
+    mov eax, map_width
+    imul eax, 6
+    add eax, 101
+    mov byte ptr [level1_map + eax], 11
+    inc eax
+    mov byte ptr [level1_map + eax], 11
+    
+    ; Cloud 5 (x=125..127, y=4..5)
+    mov eax, map_width
+    imul eax, 4
+    add eax, 125
+    mov byte ptr [level1_map + eax], 11
+    inc eax
+    mov byte ptr [level1_map + eax], 11
+    inc eax
+    mov byte ptr [level1_map + eax], 11
+    mov eax, map_width
+    imul eax, 5
+    add eax, 126
+    mov byte ptr [level1_map + eax], 11
+    
+    ; Flagpole near end (x=flag_x, y=8..17)
+    mov ebx, 8
+FlagPoleLoop:
+    mov ecx, map_width
+    imul ecx, ebx
+    add ecx, flag_x
+    mov byte ptr [level1_map + ecx], 12
+    inc ebx
+    cmp ebx, 18
+    jl FlagPoleLoop
+    
+    ; Flag top (x=flag_x-1, y=8)
+    mov eax, map_width
+    imul eax, 8
+    add eax, flag_x
+    dec eax
+    mov byte ptr [level1_map + eax], 13
+    
+    ; Reset level completion flag
+    mov level_complete, 0
     
     ; === Add Pipes ===
     ; Pipe 1: Medium pipe at x=40, starting at y=15 (3 blocks tall)
@@ -472,14 +597,19 @@ DrawMap PROC
         mov dl, 0
         call Gotoxy
         
-        mov ebx, 0          ; Column counter
+    mov ebx, 0          ; Column counter (screen space)
         DrawColLoop:
-            ; Calculate map offset
+            ; Calculate map offset with camera
+            mov esi, camera_x
+            add esi, ebx                  ; map_x = camera_x + screen_col
+            cmp esi, map_width
+            jge DrawEmpty
+            
             push eax
             push ebx
             mov eax, map_width
             imul dword ptr [esp + 4]      ; row * width
-            add eax, dword ptr [esp]      ; + col
+            add eax, esi                  ; + map_x
             mov esi, eax
             pop ebx
             pop eax
@@ -511,6 +641,10 @@ DrawMap PROC
             je DrawFireFlower
             cmp ecx, 11
             je DrawCloud
+            cmp ecx, 12
+            je DrawFlagPole
+            cmp ecx, 13
+            je DrawFlagTop
             jmp DrawEmpty
             
             DrawWall:
@@ -558,6 +692,24 @@ DrawMap PROC
                 mov eax, white + (blue*16)
                 call SetTextColor
                 mov al, 219        ; solid block for compact bright cloud
+                call WriteChar
+                pop eax
+                jmp NextTile
+            
+            DrawFlagPole:
+                push eax
+                mov eax, white + (blue*16)
+                call SetTextColor
+                mov al, 179        ; vertical line
+                call WriteChar
+                pop eax
+                jmp NextTile
+            
+            DrawFlagTop:
+                push eax
+                mov eax, lightGreen + (blue*16)
+                call SetTextColor
+                mov al, '>'        ; simple flag head
                 call WriteChar
                 pop eax
                 jmp NextTile
@@ -626,7 +778,7 @@ DrawMap PROC
             
             NextTile:
             inc ebx
-            cmp ebx, 78          ; Draw 78 columns (most of screen width)
+            cmp ebx, viewport_width
             jl DrawColLoop
         
         inc eax
@@ -641,7 +793,14 @@ DrawMap ENDP
 ; Draws Mario at current position (GREEN shirt for roll 2587)
 ; ============================================================
 DrawMario PROC
-    mov dl, byte ptr mario_x
+    ; Convert world to screen using camera
+    mov eax, mario_x
+    sub eax, camera_x
+    cmp eax, 0
+    jl SkipMarioDraw
+    cmp eax, viewport_width
+    jge SkipMarioDraw
+    mov dl, al
     mov dh, byte ptr mario_y
     call Gotoxy
     
@@ -658,6 +817,7 @@ DrawMario PROC
     
     DrawChar:
     call WriteChar
+    SkipMarioDraw:
     ret
 DrawMario ENDP
 
@@ -669,7 +829,13 @@ DrawEnemies PROC
     ; Draw Goomba 1
     cmp goomba1_alive, 1
     jne SkipGoomba1
-    mov dl, byte ptr goomba1_x
+    mov eax, goomba1_x
+    sub eax, camera_x
+    cmp eax, 0
+    jl SkipGoomba1
+    cmp eax, viewport_width
+    jge SkipGoomba1
+    mov dl, al
     mov dh, byte ptr goomba1_y
     call Gotoxy
     
@@ -689,7 +855,13 @@ DrawEnemies PROC
     ; Draw Goomba 2
     cmp goomba2_alive, 1
     jne SkipGoomba2
-    mov dl, byte ptr goomba2_x
+    mov eax, goomba2_x
+    sub eax, camera_x
+    cmp eax, 0
+    jl SkipGoomba2
+    cmp eax, viewport_width
+    jge SkipGoomba2
+    mov dl, al
     mov dh, byte ptr goomba2_y
     call Gotoxy
     
@@ -708,7 +880,13 @@ DrawEnemies PROC
     ; Draw Koopa Troopa
     cmp koopa_alive, 1
     jne SkipKoopa
-    mov dl, byte ptr koopa_x
+    mov eax, koopa_x
+    sub eax, camera_x
+    cmp eax, 0
+    jl SkipKoopa
+    cmp eax, viewport_width
+    jge SkipKoopa
+    mov dl, al
     mov dh, byte ptr koopa_y
     call Gotoxy
     
@@ -750,7 +928,13 @@ DrawFireballs PROC
     ; Fireball 1
     cmp fireball1_dir, 0
     je SkipFire1
-    mov dl, byte ptr fireball1_x
+    mov eax, fireball1_x
+    sub eax, camera_x
+    cmp eax, 0
+    jl SkipFire1
+    cmp eax, viewport_width
+    jge SkipFire1
+    mov dl, al
     mov dh, byte ptr fireball1_y
     call Gotoxy
     mov eax, lightCyan + (blue*16)  ; BLUE fireballs on sky
@@ -762,7 +946,13 @@ DrawFireballs PROC
     ; Fireball 2
     cmp fireball2_dir, 0
     je SkipFire2
-    mov dl, byte ptr fireball2_x
+    mov eax, fireball2_x
+    sub eax, camera_x
+    cmp eax, 0
+    jl SkipFire2
+    cmp eax, viewport_width
+    jge SkipFire2
+    mov dl, al
     mov dh, byte ptr fireball2_y
     call Gotoxy
     mov eax, lightCyan + (blue*16)
@@ -937,6 +1127,28 @@ CheckCollisionAbove PROC
     mov al, 1
     ret
 CheckCollisionAbove ENDP
+
+; ============================================================
+; PROCEDURE: UpdateCamera
+; Keeps camera centered on Mario within map bounds
+; ============================================================
+UpdateCamera PROC
+    ; desired = mario_x - viewport_width/2 (approx)
+    mov eax, mario_x
+    sub eax, 39                 ; viewport_width/2 rounded
+    cmp eax, 0
+    jge CameraClampMax
+    mov eax, 0
+CameraClampMax:
+    mov ebx, map_width
+    sub ebx, viewport_width
+    cmp eax, ebx
+    jle CameraSet
+    mov eax, ebx
+CameraSet:
+    mov camera_x, eax
+    ret
+UpdateCamera ENDP
 
 ; ============================================================
 ; PROCEDURE: CheckCollisionAt
@@ -1159,7 +1371,9 @@ HandleInput PROC
     MoveRight:
         mov facing_right, 1
         ; Check bounds
-        cmp mario_x, 76
+        mov eax, map_width
+        sub eax, 2
+        cmp mario_x, eax
         jge NoInput
         ; Check for wall at destination
         mov eax, mario_x
@@ -1810,6 +2024,15 @@ CheckCollisions PROC
     mov koopa_frozen, 5
     NoIceFlower:
     
+    ; Check flagpole for level completion
+    cmp ecx, 12
+    je LevelComplete
+    cmp ecx, 13
+    jne NotFlag
+    LevelComplete:
+    mov level_complete, 1
+    NotFlag:
+    
     ret
 CheckCollisions ENDP
 
@@ -2094,9 +2317,11 @@ ShowInstructionsAndSelectLevel ENDP
 GameLoop PROC
     ; Initial draw
     call Clrscr
+        call UpdateCamera
     
     GameLoopStart:
         ; Draw everything
+            call UpdateCamera
         call DrawMap
         call DrawHUD
         call DrawMario
@@ -2197,6 +2422,47 @@ GameLoop PROC
         ; Check collisions
         call CheckCollisions
         
+        ; Check level completion
+        cmp level_complete, 1
+        jne ContinueAfterWinCheck
+        ; Black background with bright text
+        mov eax, white + (black*16)
+        call SetTextColor
+        call Clrscr
+        mov eax, lightGreen + (black*16)
+        call SetTextColor
+        mov dh, 11
+        mov dl, 30
+        call Gotoxy
+        mov edx, offset gameWon1
+        call WriteString
+        
+        ; Show score
+        mov eax, yellow + (black*16)
+        call SetTextColor
+        mov dh, 13
+        mov dl, 30
+        call Gotoxy
+        mov edx, offset socre_txt
+        call WriteString
+        mov eax, score
+        call WriteDec
+        
+        ; Small prompt
+        mov eax, white + (black*16)
+        call SetTextColor
+        mov dh, 15
+        mov dl, 28
+        call Gotoxy
+        mov edx, offset level_select_prompt ; reuse "Press 1 or 2 to start" text
+        call WriteString
+        
+        mov eax, 2500
+        call Delay
+        mov game_state, 3
+        jmp ExitGame
+        ContinueAfterWinCheck:
+        
         ; Check game over
         cmp lives, 0
         jle GameOver
@@ -2208,16 +2474,40 @@ GameLoop PROC
         jmp GameLoopStart
     
     GameOver:
+        mov eax, white + (black*16)
+        call SetTextColor
         call Clrscr
+        
+        ; Title
         mov eax, red + (black*16)
         call SetTextColor
-        mov dh, 12
-        mov dl, 35
+        mov dh, 11
+        mov dl, 34
         call Gotoxy
         mov edx, offset gameOver1
         call WriteString
         
-        mov eax, 2000
+        ; Score line
+        mov eax, yellow + (black*16)
+        call SetTextColor
+        mov dh, 13
+        mov dl, 30
+        call Gotoxy
+        mov edx, offset socre_txt
+        call WriteString
+        mov eax, score
+        call WriteDec
+        
+        ; Prompt
+        mov eax, white + (black*16)
+        call SetTextColor
+        mov dh, 15
+        mov dl, 28
+        call Gotoxy
+        mov edx, offset level_select_prompt ; reuse "Press 1 or 2 to start"
+        call WriteString
+        
+        mov eax, 2500
         call Delay
     
     ExitGame:
@@ -2294,16 +2584,17 @@ main PROC
         mov goomba1_x, 25
         mov goomba1_y, 17
         mov goomba1_dir, 1
-        mov goomba2_x, 60
+        mov goomba2_x, 105
         mov goomba2_y, 17
         mov goomba2_dir, 2
         mov koopa_alive, 1
         mov koopa_state, 0
         mov koopa_dir, 1
         mov koopa_frozen, 0
-        mov koopa_x, 35
+        mov koopa_x, 130
         mov koopa_y, 17
         mov ice_flower_visible, 1
+        mov camera_x, 0
         mov game_state, 1
         mov move_counter, 0
         
