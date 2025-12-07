@@ -88,10 +88,10 @@ SetConsoleCP PROTO :DWORD
     fire_flower_x dd 0
     fire_flower_y dd 0
     fire_flower_visible db 0
-    fire_spawn_count = 10
+    fire_spawn_count = 12
     fire_spawn_coords db \
-        16,14, 33,12, 50,14, 18,10, 25,14, \
-        52,12, 67,10, 110,15, 120,8, 32,9, 140,17   ; platform positions both levels
+        16,14, 33,12, 50,14, 18,10, 25,14, 32,9, \
+        52,12, 67,10, 70,11, 102,15, 118,8, 140,17   ; platform positions both levels (incl. L2)
     fire_shots_left db 0
     
     ; Super mushroom power-up (random spawn)
@@ -157,6 +157,11 @@ SetConsoleCP PROTO :DWORD
     boss_alive db 1
     boss_dir db 2
     boss_fire_timer dd 0
+    boss_fire_x dd -1
+    boss_fire_y dd -1
+    boss_fire_dir db 0        ; 0=none,1=right,2=left
+    axe_x dd 156
+    axe_y dd 16
     
     ; === GAME STATE ===
     level db 1
@@ -169,7 +174,7 @@ SetConsoleCP PROTO :DWORD
     ; 4 = pipe top-left, 5 = pipe top-right, 6 = pipe vertical side
     ; 7 = warp pipe entrance, 8 = pipe top-middle, 9 = pipe body fill
     ; 10 = fire flower (grants fireballs), 11 = cloud (decoration)
-    ; 12 = flag pole, 13 = flag top, 14 = lava, 15 = super mushroom
+    ; 12 = flag pole, 13 = flag top, 14 = lava, 15 = super mushroom, 16 = axe
     map_width = 160
     map_height = 24
     viewport_width = 78
@@ -928,7 +933,13 @@ MushPlace2:
         cmp ebx, 157
         jl BridgeLoop
     
-    ; Flagpole near end (x=flag_x, y=8..17)
+    ; Axe placement (tile 16) near end of bridge
+    mov eax, axe_y
+    imul eax, map_width
+    add eax, axe_x
+    mov byte ptr [level1_map + eax], 16
+    
+    ; Flagpole after bridge/axe (x=flag_x, y=8..17) for level 2
     mov ebx, 8
 FlagPoleLoopL2:
     mov ecx, map_width
@@ -1016,6 +1027,8 @@ DrawMap PROC
     je DrawLava
     cmp ecx, 15
     je DrawMushroom
+    cmp ecx, 16
+    je DrawAxe
             jmp DrawEmpty
             
             DrawWall:
@@ -1129,6 +1142,15 @@ DrawMap PROC
                 mov eax, lightGreen + (blue*16)
                 call SetTextColor
                 mov al, '>'        ; simple flag head
+                call WriteChar
+                pop eax
+                jmp NextTile
+            
+            DrawAxe:
+                push eax
+                mov eax, yellow + (black*16)
+                call SetTextColor
+                mov al, '/'
                 call WriteChar
                 pop eax
                 jmp NextTile
@@ -1480,6 +1502,74 @@ DrawBoss PROC
 SkipBoss:
     ret
 DrawBoss ENDP
+
+; ============================================================
+; PROCEDURE: DrawBossProjectiles
+; ============================================================
+DrawBossProjectiles PROC
+    cmp level, 2
+    jne SkipBossProj
+    cmp boss_fire_dir, 0
+    je SkipBossProj
+    
+    mov eax, boss_fire_x
+    sub eax, camera_x
+    cmp eax, 0
+    jl SkipBossProj
+    cmp eax, viewport_width
+    jge SkipBossProj
+    mov dl, al
+    mov dh, byte ptr boss_fire_y
+    call Gotoxy
+    mov eax, red + (black*16)
+    call SetTextColor
+    mov al, '*'
+    call WriteChar
+SkipBossProj:
+    ret
+DrawBossProjectiles ENDP
+
+; ============================================================
+; PROCEDURE: UpdateBossProjectiles
+; ============================================================
+UpdateBossProjectiles PROC
+    cmp level, 2
+    jne SkipBossProjUpd
+    
+    ; Move boss fireball if active
+    cmp boss_fire_dir, 0
+    je SkipBossProjUpd
+    
+    cmp boss_fire_dir, 1
+    jne BossFireLeft
+    inc boss_fire_x
+    jmp CheckBossFire
+BossFireLeft:
+    dec boss_fire_x
+    
+CheckBossFire:
+    cmp boss_fire_x, 0
+    jl KillBossFire
+    cmp boss_fire_x, map_width
+    jge KillBossFire
+    
+    ; Stop on collision with tiles
+    push ebx
+    mov eax, boss_fire_x
+    mov ebx, boss_fire_y
+    call CheckCollisionAt
+    pop ebx
+    cmp al, 1
+    je KillBossFire
+    jmp SkipBossProjUpd
+    
+KillBossFire:
+    mov boss_fire_dir, 0
+    mov boss_fire_x, -1
+    mov boss_fire_y, -1
+SkipBossProjUpd:
+    ret
+UpdateBossProjectiles ENDP
 
 ; ============================================================
 ; PROCEDURE: DrawFireChains (Level 2)
@@ -2330,6 +2420,80 @@ PlatMoveLeft:
     inc moving_plat_x
 SkipMovePlatUpdate:
     
+    ; Boss logic (level 2)
+    cmp level, 2
+    jne SkipBossLogic
+    cmp boss_alive, 1
+    jne SkipBossLogic
+    
+    ; Boss fire timer and launch if idle
+    inc boss_fire_timer
+    cmp boss_fire_timer, 25
+    jl BossMove
+    mov boss_fire_timer, 0
+    cmp boss_fire_dir, 0
+    jne BossMove
+    mov eax, boss_x
+    mov boss_fire_x, eax
+    mov eax, boss_y
+    mov boss_fire_y, eax
+    mov eax, mario_x
+    mov ebx, boss_x
+    cmp eax, ebx
+    jg BossShootRight
+    mov boss_fire_dir, 2
+    jmp BossMove
+BossShootRight:
+    mov boss_fire_dir, 1
+    
+    ; Boss movement on bridge (cols 140-155)
+BossMove:
+    cmp boss_dir, 1
+    jne BossLeft
+    inc boss_x
+    mov eax, boss_x
+    cmp eax, 155
+    jle BossFireUpdate
+    mov boss_dir, 2
+    dec boss_x
+    jmp BossFireUpdate
+BossLeft:
+    dec boss_x
+    mov eax, boss_x
+    cmp eax, 140
+    jge BossFireUpdate
+    mov boss_dir, 1
+    inc boss_x
+    
+BossFireUpdate:
+    ; Move boss fireball if active
+    cmp boss_fire_dir, 0
+    je SkipBossLogic
+    cmp boss_fire_dir, 1
+    jne BossFireLeft
+    inc boss_fire_x
+    jmp BossFireCheck
+BossFireLeft:
+    dec boss_fire_x
+BossFireCheck:
+    cmp boss_fire_x, 0
+    jl BossFireKill
+    cmp boss_fire_x, map_width
+    jge BossFireKill
+    push ebx
+    mov eax, boss_fire_x
+    mov ebx, boss_fire_y
+    call CheckCollisionAt
+    pop ebx
+    cmp al, 1
+    je BossFireKill
+    jmp SkipBossLogic
+BossFireKill:
+    mov boss_fire_dir, 0
+    mov boss_fire_x, -1
+    mov boss_fire_y, -1
+SkipBossLogic:
+    
     cmp koopa_frozen, 0
     jle KoopaNotFrozen
     dec koopa_frozen
@@ -2828,6 +2992,20 @@ CheckCollisions PROC
     jmp MarioHurtCommon
     NoLava:
     
+    ; Boss fireball hits Mario (level 2)
+    cmp level, 2
+    jne NoBossFireHit
+    cmp boss_fire_dir, 0
+    je NoBossFireHit
+    mov eax, boss_fire_x
+    cmp eax, mario_x
+    jne NoBossFireHit
+    mov eax, boss_fire_y
+    cmp eax, mario_y
+    jne NoBossFireHit
+    jmp MarioHurtCommon
+NoBossFireHit:
+    
     cmp ecx, 2
     jne NoCoin
     ; Collected coin!
@@ -2845,6 +3023,27 @@ CheckCollisions PROC
     mov eax, super_jump_power
     mov mario_jump_power, eax
     NoMushroom:
+    
+    ; Axe collection: drop bridge and finish level (level 2)
+    cmp ecx, 16
+    jne NotAxe
+    ; remove bridge tiles (row 17, cols 140-156) -> lava
+    mov ebx, 140
+AxeBridgeLoop:
+    mov eax, map_width
+    imul eax, 17
+    add eax, ebx
+    mov byte ptr [level1_map + eax], 14
+    inc ebx
+    cmp ebx, 157
+    jl AxeBridgeLoop
+    mov boss_alive, 0
+    mov boss_health, 0
+    mov boss_fire_dir, 0
+    mov boss_fire_x, -1
+    mov boss_fire_y, -1
+    mov level_complete, 1
+    NotAxe:
     
     ; Check fire flower collection
     cmp ecx, 10
@@ -3191,6 +3390,7 @@ GameLoop PROC
         call DrawMario
         call DrawEnemies
             call DrawBoss
+            call DrawBossProjectiles
         call DrawFireballs
         
         ; Handle input
@@ -3276,6 +3476,7 @@ GameLoop PROC
         jne SkipEnemyUpdate
         call UpdateEnemies
         SkipEnemyUpdate:
+        call UpdateBossProjectiles
         
         mov eax, move_counter
         and eax, 3              ; Every 4 frames
@@ -3442,6 +3643,9 @@ main PROC
         mov fireball1_y, -1
         mov fireball2_x, -1
         mov fireball2_y, -1
+    mov boss_fire_dir, 0
+    mov boss_fire_x, -1
+    mov boss_fire_y, -1
         mov super_active, 0
         mov mushroom_visible, 0
         mov eax, normal_jump_power
@@ -3462,8 +3666,11 @@ main PROC
         mov boss_alive, 1
         mov boss_health, 6
         mov boss_x, 145
-        mov boss_y, 17
-        mov flag_x, 156
+        mov boss_y, 16
+        mov boss_fire_dir, 0
+        mov boss_fire_x, -1
+        mov boss_fire_y, -1
+        mov flag_x, 160
         jmp InitActorsDone
     InitLevel1Actors:
         mov goomba1_alive, 1
@@ -3483,6 +3690,9 @@ main PROC
         mov koopa_y, 17
         mov ice_flower_visible, 1
         mov flag_x, 150
+        mov boss_fire_dir, 0
+        mov boss_fire_x, -1
+        mov boss_fire_y, -1
     InitActorsDone:
         
         ; Start game
