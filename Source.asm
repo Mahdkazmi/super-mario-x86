@@ -11,13 +11,16 @@ PlaySound PROTO,
     hmod:DWORD,
     fdwSound:DWORD
 
+SetConsoleOutputCP PROTO :DWORD
+SetConsoleCP PROTO :DWORD
+
 .data
     ConsoleInfo CONSOLE_CURSOR_INFO<1,0>
     
     ; === STUDENT INFO ===
-    myName db "Name: [Your Name]",0
+    myName db "Name: Mahd Kazmi",0
     myRoll db "Roll No: 2587",0
-    mySection db "Section: [Your Section]",0
+    mySection db "Section: B ",0
     
     ; === MENU STRINGS ===
     title1 db "SUPER MARIO BROS",0
@@ -104,7 +107,8 @@ PlaySound PROTO,
     
     ; === LEVEL MAP ===
     ; 0 = empty, 1 = wall/platform, 2 = coin, 3 = ice flower
-    ; 4 = pipe top-left, 5 = pipe top-right, 6 = pipe vertical, 7 = warp pipe entrance
+    ; 4 = pipe top-left, 5 = pipe top-right, 6 = pipe vertical side
+    ; 7 = warp pipe entrance, 8 = pipe top-middle, 9 = pipe body fill
     map_width = 80
     map_height = 24
     
@@ -291,6 +295,8 @@ InitializeLevel1 PROC
     add eax, 40
     mov [level1_map + eax], 4
     inc eax
+    mov [level1_map + eax], 8
+    inc eax
     mov [level1_map + eax], 5
     ; Body row 1
     mov eax, map_width
@@ -298,12 +304,16 @@ InitializeLevel1 PROC
     add eax, 40
     mov [level1_map + eax], 6
     inc eax
+    mov [level1_map + eax], 9
+    inc eax
     mov [level1_map + eax], 6
     ; Body row 2
     mov eax, map_width
     imul eax, 17
     add eax, 40
     mov [level1_map + eax], 6
+    inc eax
+    mov [level1_map + eax], 9
     inc eax
     mov [level1_map + eax], 6
     
@@ -314,12 +324,16 @@ InitializeLevel1 PROC
     add eax, 65
     mov [level1_map + eax], 4
     inc eax
+    mov [level1_map + eax], 8
+    inc eax
     mov [level1_map + eax], 5
     ; Body row 1
     mov eax, map_width
     imul eax, 15
     add eax, 65
     mov [level1_map + eax], 6
+    inc eax
+    mov [level1_map + eax], 9
     inc eax
     mov [level1_map + eax], 6
     ; Body row 2 with warp entrance
@@ -329,11 +343,15 @@ InitializeLevel1 PROC
     mov [level1_map + eax], 6
     inc eax
     mov [level1_map + eax], 7    ; Warp entrance
+    inc eax
+    mov [level1_map + eax], 6
     ; Body row 3
     mov eax, map_width
     imul eax, 17
     add eax, 65
     mov [level1_map + eax], 6
+    inc eax
+    mov [level1_map + eax], 9
     inc eax
     mov [level1_map + eax], 6
     
@@ -383,11 +401,15 @@ DrawMap PROC
             je DrawPipeVertical
             cmp ecx, 7
             je DrawWarpPipe
+            cmp ecx, 8
+            je DrawPipeTopMid
+            cmp ecx, 9
+            je DrawPipeFill
             jmp DrawEmpty
             
             DrawWall:
                 push eax
-                mov eax, brown + (black*16)
+                mov eax, brown + (blue*16)
                 call SetTextColor
                 mov al, 219  ; Solid block
                 call WriteChar
@@ -396,7 +418,7 @@ DrawMap PROC
             
             DrawCoin:
                 push eax
-                mov eax, yellow + (black*16)
+                mov eax, yellow + (blue*16)
                 call SetTextColor
                 mov al, 'o'
                 call WriteChar
@@ -407,7 +429,7 @@ DrawMap PROC
                 cmp ice_flower_visible, 1
                 jne DrawEmpty
                 push eax
-                mov eax, lightCyan + (black*16)
+                mov eax, lightCyan + (blue*16)
                 call SetTextColor
                 mov al, '*'
                 call WriteChar
@@ -416,7 +438,7 @@ DrawMap PROC
             
             DrawPipeTopLeft:
                 push eax
-                mov eax, green + (black*16)
+                mov eax, green + (blue*16)
                 call SetTextColor
                 mov al, 201  ; ╔
                 call WriteChar
@@ -425,25 +447,43 @@ DrawMap PROC
             
             DrawPipeTopRight:
                 push eax
-                mov eax, green + (black*16)
+                mov eax, green + (blue*16)
                 call SetTextColor
                 mov al, 187  ; ╗
                 call WriteChar
                 pop eax
                 jmp NextTile
             
+            DrawPipeTopMid:
+                push eax
+                mov eax, green + (blue*16)
+                call SetTextColor
+                mov al, 205  ; ═
+                call WriteChar
+                pop eax
+                jmp NextTile
+            
             DrawPipeVertical:
                 push eax
-                mov eax, green + (black*16)
+                mov eax, green + (blue*16)
                 call SetTextColor
                 mov al, 186  ; ║
                 call WriteChar
                 pop eax
                 jmp NextTile
             
+            DrawPipeFill:
+                push eax
+                mov eax, green + (blue*16)
+                call SetTextColor
+                mov al, 219  ; █
+                call WriteChar
+                pop eax
+                jmp NextTile
+            
             DrawWarpPipe:
                 push eax
-                mov eax, lightGreen + (black*16)
+                mov eax, lightGreen + (blue*16)
                 call SetTextColor
                 mov al, 254  ; ■ (warp entrance)
                 call WriteChar
@@ -452,7 +492,7 @@ DrawMap PROC
             
             DrawEmpty:
                 push eax
-                mov eax, white + (black*16)
+                mov eax, white + (blue*16)
                 call SetTextColor
                 mov al, ' '
                 call WriteChar
@@ -480,7 +520,7 @@ DrawMario PROC
     call Gotoxy
     
     ; Green Mario (odd roll number)
-    mov eax, green + (black*16)
+    mov eax, green + (blue*16)
     call SetTextColor
     
     cmp facing_right, 1
@@ -510,10 +550,10 @@ DrawEnemies PROC
     ; Check if frozen
     cmp goomba1_frozen, 0
     jle NormalGoomba1
-    mov eax, lightCyan + (black*16)
+    mov eax, lightCyan + (blue*16)
     jmp ColorSet1
     NormalGoomba1:
-    mov eax, red + (black*16)
+    mov eax, red + (blue*16)
     ColorSet1:
     call SetTextColor
     mov al, '@'
@@ -529,10 +569,10 @@ DrawEnemies PROC
     
     cmp goomba2_frozen, 0
     jle NormalGoomba2
-    mov eax, lightCyan + (black*16)
+    mov eax, lightCyan + (blue*16)
     jmp ColorSet2
     NormalGoomba2:
-    mov eax, red + (black*16)
+    mov eax, red + (blue*16)
     ColorSet2:
     call SetTextColor
     mov al, '@'
@@ -553,7 +593,7 @@ DrawFireballs PROC
     mov dl, byte ptr fireball1_x
     mov dh, byte ptr fireball1_y
     call Gotoxy
-    mov eax, lightBlue + (black*16)  ; BLUE fireballs (roll 2587)
+    mov eax, lightCyan + (blue*16)  ; BLUE fireballs on sky
     call SetTextColor
     mov al, '*'
     call WriteChar
@@ -565,7 +605,7 @@ DrawFireballs PROC
     mov dl, byte ptr fireball2_x
     mov dh, byte ptr fireball2_y
     call Gotoxy
-    mov eax, lightBlue + (black*16)
+    mov eax, lightCyan + (blue*16)
     call SetTextColor
     mov al, '*'
     call WriteChar
@@ -680,6 +720,14 @@ CheckCollisionBelow PROC
     je HasCollision
     cmp ecx, 5             ; Pipe top-right
     je HasCollision
+    cmp ecx, 6             ; Pipe vertical side
+    je HasCollision
+    cmp ecx, 7             ; Warp entrance
+    je HasCollision
+    cmp ecx, 8             ; Pipe top-middle
+    je HasCollision
+    cmp ecx, 9             ; Pipe body fill
+    je HasCollision
     
     NoCollision:
     mov al, 0
@@ -715,6 +763,10 @@ CheckCollisionAbove PROC
     cmp ecx, 6             ; Pipe vertical
     je HasCollisionAbove
     cmp ecx, 7             ; Warp entrance
+    je HasCollisionAbove
+    cmp ecx, 8             ; Pipe top-middle
+    je HasCollisionAbove
+    cmp ecx, 9             ; Pipe body fill
     je HasCollisionAbove
     
     NoCollisionAbove:
@@ -760,6 +812,10 @@ CheckCollisionAt PROC
     cmp ecx, 6             ; Pipe vertical
     je HasCollision2
     cmp ecx, 7             ; Warp entrance
+    je HasCollision2
+    cmp ecx, 8             ; Pipe top-middle
+    je HasCollision2
+    cmp ecx, 9             ; Pipe body fill
     je HasCollision2
     
     mov al, 0
@@ -1321,8 +1377,10 @@ CheckCollisions PROC
     mov byte ptr [level1_map + eax], 0
     mov ice_flower_visible, 0
     ; Ice flower effect: freeze enemies
-    mov goomba1_frozen, 240    ; ~4 seconds at 60fps
-    mov goomba2_frozen, 240
+    ; Freeze timer ticks once every enemy update (every 8 frames).
+    ; HUD seconds tick every 10 frames, so 5 ticks ≈ 4 HUD seconds (5*8=40 frames).
+    mov goomba1_frozen, 5
+    mov goomba2_frozen, 5
     NoIceFlower:
     
     ret
@@ -1627,6 +1685,11 @@ main PROC
     invoke GetStdHandle, eax
     mov esi, offset ConsoleInfo
     invoke SetConsoleCursorInfo, eax, esi
+    
+    ; Ensure box-drawing characters (╔═╗ etc.) render correctly
+    mov eax, 437                     ; OEM US code page with box chars
+    invoke SetConsoleOutputCP, eax
+    invoke SetConsoleCP, eax
     
     ; Main menu loop
     MenuLoop:
