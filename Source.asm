@@ -49,6 +49,17 @@ SetConsoleCP PROTO :DWORD
     pause_resume db "Resume (R)",0
     pause_quit db "Quit to Menu (Q)",0
     
+    ; === NAME ENTRY STRINGS ===
+    name_entry_title db "ENTER YOUR NAME",0
+    name_entry_prompt db "Name: ",0
+    name_entry_hint db "Press ENTER when done",0
+    
+    ; === HIGH SCORE STRINGS ===
+    highscore_title db "HIGH SCORES",0
+    highscore_filename db "scores.txt",0
+    highscore_separator db " - ",0
+    highscore_none db "No high scores yet!",0
+    
     ; === MARIO ASCII ART ===
     mario_line1 db "  __  __       __    __      _____      _____      ____       ____      ",0
     mario_line2 db " |  \/  |     /_ |  /_ |    |  __ \    |_   _|    / __ \     / __ \     ",0
@@ -67,6 +78,25 @@ SetConsoleCP PROTO :DWORD
     ; === PLAYER DATA ===
     userName db 20 dup(?)
     userNameSize = 20
+    currentPlayerName db 16 dup(0)  ; Current player's name
+    
+    ; === HIGH SCORE DATA ===
+    fileHandle HANDLE ?
+    bytesWritten DWORD ?
+    highScoreBuffer db 512 dup(0)  ; Buffer for file I/O
+    highScoreCount dd 0
+    
+    ; High score entries (max 5)
+    highScoreName1 db 16 dup(0)
+    highScoreValue1 dd 0
+    highScoreName2 db 16 dup(0)
+    highScoreValue2 dd 0
+    highScoreName3 db 16 dup(0)
+    highScoreValue3 dd 0
+    highScoreName4 db 16 dup(0)
+    highScoreValue4 dd 0
+    highScoreName5 db 16 dup(0)
+    highScoreValue5 dd 0
     
     mario_x dd 5
     mario_y dd 18
@@ -3381,6 +3411,239 @@ ShowInstructionsAndSelectLevel PROC
 ShowInstructionsAndSelectLevel ENDP
 
 ; ============================================================
+; PROCEDURE: GetPlayerName
+; Gets player name input
+; ============================================================
+GetPlayerName PROC
+    call Clrscr
+    
+    ; Title
+    mov eax, yellow + (black*16)
+    call SetTextColor
+    mov dh, 8
+    mov dl, 28
+    call Gotoxy
+    mov edx, offset name_entry_title
+    call WriteString
+    
+    ; Prompt
+    mov eax, white + (black*16)
+    call SetTextColor
+    mov dh, 12
+    mov dl, 20
+    call Gotoxy
+    mov edx, offset name_entry_prompt
+    call WriteString
+    
+    ; Hint
+    mov eax, gray + (black*16)
+    call SetTextColor
+    mov dh, 14
+    mov dl, 24
+    call Gotoxy
+    mov edx, offset name_entry_hint
+    call WriteString
+    
+    ; Get input
+    mov eax, white + (black*16)
+    call SetTextColor
+    mov dh, 12
+    mov dl, 42
+    call Gotoxy
+    
+    mov edx, offset currentPlayerName
+    mov ecx, 15                ; Max 15 characters
+    call ReadString
+    
+    ; If empty, use default
+    cmp eax, 0
+    jg NameEntered
+    mov byte ptr [currentPlayerName], 'P'
+    mov byte ptr [currentPlayerName + 1], 'l'
+    mov byte ptr [currentPlayerName + 2], 'a'
+    mov byte ptr [currentPlayerName + 3], 'y'
+    mov byte ptr [currentPlayerName + 4], 'e'
+    mov byte ptr [currentPlayerName + 5], 'r'
+    mov byte ptr [currentPlayerName + 6], 0
+    
+    NameEntered:
+    ret
+GetPlayerName ENDP
+
+; ============================================================
+; PROCEDURE: SaveHighScore
+; Saves current player's score to file
+; ============================================================
+SaveHighScore PROC
+    pushad
+    
+    ; Open/create file for append
+    mov edx, offset highscore_filename
+    call OpenInputFile
+    cmp eax, INVALID_HANDLE_VALUE
+    jne FileExists
+    
+    ; File doesn't exist, create it
+    mov edx, offset highscore_filename
+    call CreateOutputFile
+    mov fileHandle, eax
+    jmp FilePrepared
+    
+    FileExists:
+    ; Close the input file and open for append
+    call CloseFile
+    mov edx, offset highscore_filename
+    call CreateOutputFile
+    mov fileHandle, eax
+    
+    FilePrepared:
+    cmp fileHandle, INVALID_HANDLE_VALUE
+    je SaveError
+    
+    ; Build score entry string in buffer
+    mov edi, offset highScoreBuffer
+    mov esi, offset currentPlayerName
+    
+    ; Copy name to buffer
+    CopyName:
+        lodsb
+        cmp al, 0
+        je EndName
+        stosb
+        jmp CopyName
+    
+    EndName:
+    ; Add separator " - "
+    mov al, ' '
+    stosb
+    mov al, '-'
+    stosb
+    mov al, ' '
+    stosb
+    
+    ; Convert score to ASCII and add to buffer
+    mov eax, score
+    mov ebx, 10
+    mov ecx, 0          ; Digit counter
+    
+    ; Extract digits (in reverse)
+    PushDigits:
+        xor edx, edx
+        div ebx
+        push edx        ; Save digit
+        inc ecx
+        cmp eax, 0
+        jne PushDigits
+    
+    ; Pop and store digits (now in correct order)
+    PopDigits:
+        pop eax
+        add al, '0'
+        stosb
+        loop PopDigits
+    
+    ; Add newline (CR LF)
+    mov al, 0Dh
+    stosb
+    mov al, 0Ah
+    stosb
+    
+    ; Calculate buffer length
+    mov ecx, edi
+    sub ecx, offset highScoreBuffer
+    
+    ; Write to file
+    mov eax, fileHandle
+    mov edx, offset highScoreBuffer
+    call WriteToFile
+    
+    ; Close file
+    mov eax, fileHandle
+    call CloseFile
+    
+    SaveError:
+    popad
+    ret
+SaveHighScore ENDP
+
+; ============================================================
+; PROCEDURE: DisplayHighScores
+; Shows high scores from file
+; ============================================================
+DisplayHighScores PROC
+    call Clrscr
+    
+    ; Title
+    mov eax, yellow + (black*16)
+    call SetTextColor
+    mov dh, 3
+    mov dl, 30
+    call Gotoxy
+    mov edx, offset highscore_title
+    call WriteString
+    
+    ; Try to open file
+    mov edx, offset highscore_filename
+    call OpenInputFile
+    cmp eax, INVALID_HANDLE_VALUE
+    je NoScoresFile
+    
+    mov fileHandle, eax
+    
+    ; Read file contents
+    mov eax, fileHandle
+    mov edx, offset highScoreBuffer
+    mov ecx, 512
+    call ReadFromFile
+    mov bytesWritten, eax
+    
+    ; Close file
+    mov eax, fileHandle
+    call CloseFile
+    
+    ; Display contents
+    cmp bytesWritten, 0
+    je NoScoresFile
+    
+    mov eax, white + (black*16)
+    call SetTextColor
+    mov dh, 6
+    mov dl, 15
+    call Gotoxy
+    
+    ; Null terminate buffer
+    mov eax, bytesWritten
+    mov byte ptr [highScoreBuffer + eax], 0
+    
+    mov edx, offset highScoreBuffer
+    call WriteString
+    
+    jmp ScoresDisplayed
+    
+    NoScoresFile:
+    mov eax, gray + (black*16)
+    call SetTextColor
+    mov dh, 8
+    mov dl, 28
+    call Gotoxy
+    mov edx, offset highscore_none
+    call WriteString
+    
+    ScoresDisplayed:
+    ; Wait for key
+    mov eax, white + (black*16)
+    call SetTextColor
+    mov dh, 20
+    mov dl, 25
+    call Gotoxy
+    mov edx, offset level_select_prompt
+    call WriteString
+    call ReadChar
+    
+    ret
+DisplayHighScores ENDP
+
+; ============================================================
 ; PROCEDURE: GameLoop
 ; Main game loop
 ; ============================================================
@@ -3541,6 +3804,10 @@ GameLoop PROC
         
         mov eax, 2500
         call Delay
+        
+        ; Save high score
+        call SaveHighScore
+        
         mov game_state, 3
         jmp ExitGame
         ContinueAfterWinCheck:
@@ -3591,6 +3858,9 @@ GameLoop PROC
         
         mov eax, 2500
         call Delay
+        
+        ; Save high score
+        call SaveHighScore
     
     ExitGame:
     ret
@@ -3622,6 +3892,11 @@ main PROC
         cmp al, 'P'
         je StartGame
         
+        cmp al, 'h'
+        je ShowHighScores
+        cmp al, 'H'
+        je ShowHighScores
+        
         cmp al, 'q'
         je QuitProgram
         cmp al, 'Q'
@@ -3629,9 +3904,16 @@ main PROC
         
         jmp MenuLoop
     
+    ShowHighScores:
+        call DisplayHighScores
+        jmp MenuLoop
+    
     StartGame:
         ; Instructions + level select
         call ShowInstructionsAndSelectLevel
+        
+        ; Get player name
+        call GetPlayerName
         
         ; Initialize selected level (2 currently reuses level 1 layout)
         cmp level, 2
