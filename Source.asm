@@ -33,7 +33,7 @@ SetConsoleCP PROTO :DWORD
     instr_move db "Move: A/D or Left/Right Arrows",0
     instr_jump db "Jump: W or Space",0
     instr_shoot db "Shoot: F (after fire flower pickup)",0
-    instr_pause db "Pause: R",0
+    instr_pause db "Pause: P ",0
     instr_quit db "Quit: Q",0
     instr_power db "Power-ups: Fire flower = fireballs, Ice flower = freeze",0
     instr_divider db "---------------",0
@@ -91,6 +91,12 @@ SetConsoleCP PROTO :DWORD
     flag_x dd 150
     level_complete db 0
     
+    ; === LEVEL 2 FIRE CHAINS ===
+    fire_chain1_anchor_x dd 70
+    fire_chain1_anchor_y dd 12
+    fire_chain2_anchor_x dd 110
+    fire_chain2_anchor_y dd 14
+    
     ; Fireballs (max 2 on screen)
     fireball1_x dd -1         ; -1 = not active
     fireball1_y dd -1
@@ -141,7 +147,7 @@ SetConsoleCP PROTO :DWORD
     ; 4 = pipe top-left, 5 = pipe top-right, 6 = pipe vertical side
     ; 7 = warp pipe entrance, 8 = pipe top-middle, 9 = pipe body fill
     ; 10 = fire flower (grants fireballs), 11 = cloud (decoration)
-    ; 12 = flag pole, 13 = flag top
+    ; 12 = flag pole, 13 = flag top, 14 = lava
     map_width = 160
     map_height = 24
     viewport_width = 78
@@ -404,105 +410,87 @@ InitializeLevel1 PROC
     add eax, fire_flower_x
     mov byte ptr [level1_map + eax], 10
     
-    ; Add decorative clouds (non-colliding)
-    ; Cloud 1 (x=12..14, y=5..6)
-    mov eax, map_width
-    imul eax, 5
-    add eax, 12
-    mov byte ptr [level1_map + eax], 11
-    inc eax
-    mov byte ptr [level1_map + eax], 11
-    inc eax
-    mov byte ptr [level1_map + eax], 11
-    mov eax, map_width
-    imul eax, 6
-    add eax, 13
-    mov byte ptr [level1_map + eax], 11
-    
-    ; Cloud 2 (x=42..45, y=4..5)
-    mov eax, map_width
-    imul eax, 4
-    add eax, 42
-    mov byte ptr [level1_map + eax], 11
-    inc eax
-    mov byte ptr [level1_map + eax], 11
-    inc eax
-    mov byte ptr [level1_map + eax], 11
-    inc eax
-    mov byte ptr [level1_map + eax], 11
-    mov eax, map_width
-    imul eax, 5
-    add eax, 43
-    mov byte ptr [level1_map + eax], 11
-    inc eax
-    mov byte ptr [level1_map + eax], 11
-    
-    ; Cloud 3 (x=68..70, y=6..7)
-    mov eax, map_width
-    imul eax, 6
-    add eax, 68
-    mov byte ptr [level1_map + eax], 11
-    inc eax
-    mov byte ptr [level1_map + eax], 11
-    inc eax
-    mov byte ptr [level1_map + eax], 11
-    mov eax, map_width
-    imul eax, 7
-    add eax, 69
-    mov byte ptr [level1_map + eax], 11
-    
-    ; Cloud 4 (x=100..103, y=5..6)
-    mov eax, map_width
-    imul eax, 5
-    add eax, 100
-    mov byte ptr [level1_map + eax], 11
-    inc eax
-    mov byte ptr [level1_map + eax], 11
-    inc eax
-    mov byte ptr [level1_map + eax], 11
-    inc eax
-    mov byte ptr [level1_map + eax], 11
-    mov eax, map_width
-    imul eax, 6
-    add eax, 101
-    mov byte ptr [level1_map + eax], 11
-    inc eax
-    mov byte ptr [level1_map + eax], 11
-    
-    ; Cloud 5 (x=125..127, y=4..5)
-    mov eax, map_width
-    imul eax, 4
-    add eax, 125
-    mov byte ptr [level1_map + eax], 11
-    inc eax
-    mov byte ptr [level1_map + eax], 11
-    inc eax
-    mov byte ptr [level1_map + eax], 11
-    mov eax, map_width
-    imul eax, 5
-    add eax, 126
-    mov byte ptr [level1_map + eax], 11
-    
-    ; Flagpole near end (x=flag_x, y=8..17)
-    mov ebx, 8
-FlagPoleLoop:
-    mov ecx, map_width
-    imul ecx, ebx
-    add ecx, flag_x
-    mov byte ptr [level1_map + ecx], 12
-    inc ebx
-    cmp ebx, 18
-    jl FlagPoleLoop
-    
-    ; Flag top (x=flag_x-1, y=8)
-    mov eax, map_width
-    imul eax, 8
-    add eax, flag_x
-    dec eax
-    mov byte ptr [level1_map + eax], 13
-    
-    ; Reset level completion flag
-    mov level_complete, 0
+    ; Add decorative clouds (non-colliding) only for level 1
+    cmp level, 1
+    jne SkipClouds
+        ; Cloud 1 (x=12..14, y=5..6)
+        mov eax, map_width
+        imul eax, 5
+        add eax, 12
+        mov byte ptr [level1_map + eax], 11
+        inc eax
+        mov byte ptr [level1_map + eax], 11
+        inc eax
+        mov byte ptr [level1_map + eax], 11
+        mov eax, map_width
+        imul eax, 6
+        add eax, 13
+        mov byte ptr [level1_map + eax], 11
+        
+        ; Cloud 2 (x=42..45, y=4..5)
+        mov eax, map_width
+        imul eax, 4
+        add eax, 42
+        mov byte ptr [level1_map + eax], 11
+        inc eax
+        mov byte ptr [level1_map + eax], 11
+        inc eax
+        mov byte ptr [level1_map + eax], 11
+        inc eax
+        mov byte ptr [level1_map + eax], 11
+        mov eax, map_width
+        imul eax, 5
+        add eax, 43
+        mov byte ptr [level1_map + eax], 11
+        inc eax
+        mov byte ptr [level1_map + eax], 11
+        
+        ; Cloud 3 (x=68..70, y=6..7)
+        mov eax, map_width
+        imul eax, 6
+        add eax, 68
+        mov byte ptr [level1_map + eax], 11
+        inc eax
+        mov byte ptr [level1_map + eax], 11
+        inc eax
+        mov byte ptr [level1_map + eax], 11
+        mov eax, map_width
+        imul eax, 7
+        add eax, 69
+        mov byte ptr [level1_map + eax], 11
+        
+        ; Cloud 4 (x=100..103, y=5..6)
+        mov eax, map_width
+        imul eax, 5
+        add eax, 100
+        mov byte ptr [level1_map + eax], 11
+        inc eax
+        mov byte ptr [level1_map + eax], 11
+        inc eax
+        mov byte ptr [level1_map + eax], 11
+        inc eax
+        mov byte ptr [level1_map + eax], 11
+        mov eax, map_width
+        imul eax, 6
+        add eax, 101
+        mov byte ptr [level1_map + eax], 11
+        inc eax
+        mov byte ptr [level1_map + eax], 11
+        
+        ; Cloud 5 (x=125..127, y=4..5)
+        mov eax, map_width
+        imul eax, 4
+        add eax, 125
+        mov byte ptr [level1_map + eax], 11
+        inc eax
+        mov byte ptr [level1_map + eax], 11
+        inc eax
+        mov byte ptr [level1_map + eax], 11
+        mov eax, map_width
+        imul eax, 5
+        add eax, 126
+        mov byte ptr [level1_map + eax], 11
+    SkipClouds:
     
     ; === Add Pipes ===
     ; Pipe 1: Medium pipe at x=40, starting at y=15 (3 blocks tall)
@@ -572,6 +560,27 @@ FlagPoleLoop:
     inc eax
     mov [level1_map + eax], 6
     
+    ; Flagpole near end (x=flag_x, y=8..17) - level 1
+    mov ebx, 8
+FlagPoleLoopL1:
+    mov ecx, map_width
+    imul ecx, ebx
+    add ecx, flag_x
+    mov byte ptr [level1_map + ecx], 12
+    inc ebx
+    cmp ebx, 18
+    jl FlagPoleLoopL1
+    
+    ; Flag top (x=flag_x-1, y=8)
+    mov eax, map_width
+    imul eax, 8
+    add eax, flag_x
+    dec eax
+    mov byte ptr [level1_map + eax], 13
+    
+    ; Reset level completion flag
+    mov level_complete, 0
+    
     ret
 InitializeLevel1 ENDP
 
@@ -580,8 +589,164 @@ InitializeLevel1 ENDP
 ; Placeholder: currently reuses level 1 layout
 ; ============================================================
 InitializeLevel2 PROC
-    call InitializeLevel1
     mov level, 2
+    
+    ; Clear map
+    mov ecx, map_height * map_width
+    mov esi, 0
+    ClearLoop2:
+        mov [level1_map + esi], 0
+        inc esi
+        loop ClearLoop2
+    
+    ; Ground (stone) rows 18-23
+    mov eax, 18
+    GroundLoop2:
+        mov ebx, 0
+        GroundColLoop2:
+            push eax
+            mov eax, map_width
+            imul eax, dword ptr [esp]
+            add eax, ebx
+            mov [level1_map + eax], 1
+            pop eax
+            
+            inc ebx
+            cmp ebx, map_width
+            jl GroundColLoop2
+        inc eax
+        cmp eax, map_height
+        jl GroundLoop2
+    
+    ; Lava pits
+    ; Pit 1: columns 36-37 (very narrow)
+    mov ebx, 36
+    Lava1Loop:
+        mov eax, 18
+        Lava1Rows:
+            push eax
+            mov eax, map_width
+            imul eax, dword ptr [esp]
+            add eax, ebx
+            mov byte ptr [level1_map + eax], 14
+            pop eax
+            inc eax
+            cmp eax, 24
+            jl Lava1Rows
+        inc ebx
+        cmp ebx, 38
+        jl Lava1Loop
+    
+    ; Pit 2: columns 87-88 (very narrow)
+    mov ebx, 87
+    Lava2Loop:
+        mov eax, 18
+        Lava2Rows:
+            push eax
+            mov eax, map_width
+            imul eax, dword ptr [esp]
+            add eax, ebx
+            mov byte ptr [level1_map + eax], 14
+            pop eax
+            inc eax
+            cmp eax, 24
+            jl Lava2Rows
+        inc ebx
+        cmp ebx, 89
+        jl Lava2Loop
+    
+    ; Pit 3 (boss bridge lava): columns 138-158
+    mov ebx, 138
+    Lava3Loop:
+        mov eax, 18
+        Lava3Rows:
+            push eax
+            mov eax, map_width
+            imul eax, dword ptr [esp]
+            add eax, ebx
+            mov byte ptr [level1_map + eax], 14
+            pop eax
+            inc eax
+            cmp eax, 24
+            jl Lava3Rows
+        inc ebx
+        cmp ebx, 159
+        jl Lava3Loop
+    
+    ; Stone platforms
+    ; Platform A: Row 14, columns 10-28
+    mov ebx, 10
+    PlatA:
+        push eax
+        mov eax, map_width
+        imul eax, 14
+        add eax, ebx
+        mov [level1_map + eax], 1
+        pop eax
+        inc ebx
+        cmp ebx, 29
+        jl PlatA
+    
+    ; Platform B: Row 12, columns 48-60
+    mov ebx, 48
+    PlatB:
+        push eax
+        mov eax, map_width
+        imul eax, 12
+        add eax, ebx
+        mov [level1_map + eax], 1
+        pop eax
+        inc ebx
+        cmp ebx, 61
+        jl PlatB
+    
+    ; Platform C: Row 15, columns 100-120
+    mov ebx, 100
+    PlatC:
+        push eax
+        mov eax, map_width
+        imul eax, 15
+        add eax, ebx
+        mov [level1_map + eax], 1
+        pop eax
+        inc ebx
+        cmp ebx, 121
+        jl PlatC
+    
+    ; Boss bridge over lava (row 17, columns 140-156)
+    mov ebx, 140
+    BridgeLoop:
+        push eax
+        mov eax, map_width
+        imul eax, 17
+        add eax, ebx
+        mov [level1_map + eax], 1
+        pop eax
+        inc ebx
+        cmp ebx, 157
+        jl BridgeLoop
+    
+    ; Flagpole near end (x=flag_x, y=8..17)
+    mov ebx, 8
+FlagPoleLoopL2:
+    mov ecx, map_width
+    imul ecx, ebx
+    add ecx, flag_x
+    mov byte ptr [level1_map + ecx], 12
+    inc ebx
+    cmp ebx, 18
+    jl FlagPoleLoopL2
+    
+    ; Flag top (x=flag_x-1, y=8)
+    mov eax, map_width
+    imul eax, 8
+    add eax, flag_x
+    dec eax
+    mov byte ptr [level1_map + eax], 13
+    
+    ; Reset completion
+    mov level_complete, 0
+    
     ret
 InitializeLevel2 ENDP
 
@@ -645,11 +810,19 @@ DrawMap PROC
             je DrawFlagPole
             cmp ecx, 13
             je DrawFlagTop
+            cmp ecx, 14
+            je DrawLava
             jmp DrawEmpty
             
             DrawWall:
                 push eax
+                cmp level, 2
+                jne WallLevel1
+                mov eax, lightGray + (black*16)
+                jmp WallColorDone
+                WallLevel1:
                 mov eax, brown + (blue*16)
+                WallColorDone:
                 call SetTextColor
                 mov al, 219  ; Solid block
                 call WriteChar
@@ -658,7 +831,13 @@ DrawMap PROC
             
             DrawCoin:
                 push eax
+                cmp level, 2
+                jne CoinLevel1
+                mov eax, yellow + (black*16)
+                jmp CoinColorDone
+                CoinLevel1:
                 mov eax, yellow + (blue*16)
+                CoinColorDone:
                 call SetTextColor
                 mov al, 'o'
                 call WriteChar
@@ -669,7 +848,13 @@ DrawMap PROC
                 cmp ice_flower_visible, 1
                 jne DrawEmpty
                 push eax
+                cmp level, 2
+                jne IceLevel1
+                mov eax, lightCyan + (black*16)
+                jmp IceColorDone
+                IceLevel1:
                 mov eax, lightCyan + (blue*16)
+                IceColorDone:
                 call SetTextColor
                 mov al, '*'
                 call WriteChar
@@ -680,7 +865,13 @@ DrawMap PROC
                 cmp fire_flower_visible, 1
                 jne DrawEmpty
                 push eax
+                cmp level, 2
+                jne FireFlw1
+                mov eax, lightRed + (black*16)
+                jmp FireFlwSet
+                FireFlw1:
                 mov eax, lightRed + (blue*16)
+                FireFlwSet:
                 call SetTextColor
                 mov al, 'F'
                 call WriteChar
@@ -689,9 +880,24 @@ DrawMap PROC
             
             DrawCloud:
                 push eax
+                cmp level, 2
+                jne CloudL1
+                mov eax, white + (black*16)
+                jmp CloudSet
+                CloudL1:
                 mov eax, white + (blue*16)
+                CloudSet:
                 call SetTextColor
                 mov al, 219        ; solid block for compact bright cloud
+                call WriteChar
+                pop eax
+                jmp NextTile
+            
+            DrawLava:
+                push eax
+                mov eax, lightRed + (black*16)
+                call SetTextColor
+                mov al, 247        ; medium shade
                 call WriteChar
                 pop eax
                 jmp NextTile
@@ -716,7 +922,13 @@ DrawMap PROC
             
             DrawPipeTopLeft:
                 push eax
+                cmp level, 2
+                jne PipeL1
+                mov eax, green + (black*16)
+                jmp PipeSet1
+                PipeL1:
                 mov eax, green + (blue*16)
+                PipeSet1:
                 call SetTextColor
                 mov al, 201  ; ╔
                 call WriteChar
@@ -725,7 +937,13 @@ DrawMap PROC
             
             DrawPipeTopRight:
                 push eax
+                cmp level, 2
+                jne PipeR1
+                mov eax, green + (black*16)
+                jmp PipeSet2
+                PipeR1:
                 mov eax, green + (blue*16)
+                PipeSet2:
                 call SetTextColor
                 mov al, 187  ; ╗
                 call WriteChar
@@ -734,7 +952,13 @@ DrawMap PROC
             
             DrawPipeTopMid:
                 push eax
+                cmp level, 2
+                jne PipeM1
+                mov eax, green + (black*16)
+                jmp PipeSet3
+                PipeM1:
                 mov eax, green + (blue*16)
+                PipeSet3:
                 call SetTextColor
                 mov al, 205  ; ═
                 call WriteChar
@@ -743,7 +967,13 @@ DrawMap PROC
             
             DrawPipeVertical:
                 push eax
+                cmp level, 2
+                jne PipeV1
+                mov eax, green + (black*16)
+                jmp PipeSet4
+                PipeV1:
                 mov eax, green + (blue*16)
+                PipeSet4:
                 call SetTextColor
                 mov al, 186  ; ║
                 call WriteChar
@@ -752,7 +982,13 @@ DrawMap PROC
             
             DrawPipeFill:
                 push eax
+                cmp level, 2
+                jne PipeF1
+                mov eax, green + (black*16)
+                jmp PipeSet5
+                PipeF1:
                 mov eax, green + (blue*16)
+                PipeSet5:
                 call SetTextColor
                 mov al, 219  ; █
                 call WriteChar
@@ -770,7 +1006,13 @@ DrawMap PROC
             
             DrawEmpty:
                 push eax
+                cmp level, 2
+                jne EmptyL1
+                mov eax, white + (black*16)
+                jmp EmptySet
+                EmptyL1:
                 mov eax, white + (blue*16)
+                EmptySet:
                 call SetTextColor
                 mov al, ' '
                 call WriteChar
@@ -805,7 +1047,7 @@ DrawMario PROC
     call Gotoxy
     
     ; Green Mario (odd roll number)
-    mov eax, green + (blue*16)
+    mov eax, green + (black*16)
     call SetTextColor
     
     cmp facing_right, 1
@@ -963,6 +1205,206 @@ DrawFireballs PROC
     
     ret
 DrawFireballs ENDP
+
+; ============================================================
+; PROCEDURE: DrawBoss (Level 2)
+; Simple static boss render
+; ============================================================
+DrawBoss PROC
+    cmp level, 2
+    jne SkipBoss
+    cmp boss_alive, 1
+    jne SkipBoss
+    
+    mov eax, boss_x
+    sub eax, camera_x
+    cmp eax, 0
+    jl SkipBoss
+    cmp eax, viewport_width
+    jge SkipBoss
+    mov dl, al
+    mov dh, byte ptr boss_y
+    call Gotoxy
+    mov eax, red + (black*16)
+    call SetTextColor
+    mov al, 'B'
+    call WriteChar
+SkipBoss:
+    ret
+DrawBoss ENDP
+
+; ============================================================
+; PROCEDURE: DrawFireChains (Level 2)
+; Renders rotating fire chains anchored at fixed points
+; ============================================================
+DrawFireChains PROC
+    cmp level, 2
+    jne NoChains
+    
+    ; phase cycles every few frames using move_counter
+    mov eax, move_counter
+    shr eax, 2
+    and eax, 3
+    mov bl, al                 ; phase for chain1
+    ; chain 1
+    push ebx
+    push eax
+    push edx
+    push ecx
+    push esi
+    push edi
+    
+    mov esi, fire_chain1_anchor_x
+    mov edi, fire_chain1_anchor_y
+    call DrawOneChain
+    
+    ; chain 2 (phase offset +1)
+    mov eax, move_counter
+    shr eax, 2
+    inc eax
+    and eax, 3
+    mov bl, al
+    mov esi, fire_chain2_anchor_x
+    mov edi, fire_chain2_anchor_y
+    call DrawOneChain
+    
+    pop edi
+    pop esi
+    pop ecx
+    pop edx
+    pop eax
+    pop ebx
+NoChains:
+    ret
+DrawFireChains ENDP
+
+; Helper: DrawOneChain
+; Inputs: esi = anchor_x, edi = anchor_y, bl = phase (0R,1D,2L,3U)
+DrawOneChain PROC
+    ; length = 3 fireballs
+    mov ecx, 1
+ChainLoop:
+    mov eax, esi
+    mov edx, edi
+    cmp bl, 0
+    je ChainRight
+    cmp bl, 1
+    je ChainDown
+    cmp bl, 2
+    je ChainLeft
+    ; up
+    sub edx, ecx
+    jmp ChainPosReady
+ChainRight:
+    add eax, ecx
+    jmp ChainPosReady
+ChainDown:
+    add edx, ecx
+    jmp ChainPosReady
+ChainLeft:
+    sub eax, ecx
+ChainPosReady:
+    ; cull to viewport
+    sub eax, camera_x
+    cmp eax, 0
+    jl SkipBall
+    cmp eax, viewport_width
+    jge SkipBall
+    mov edx, edi
+    mov dh, dl
+    mov dl, al
+    call Gotoxy
+    mov eax, lightRed + (black*16)
+    call SetTextColor
+    mov al, 'o'
+    call WriteChar
+SkipBall:
+    inc ecx
+    cmp ecx, 4
+    jle ChainLoop
+    ret
+DrawOneChain ENDP
+
+; ============================================================
+; PROCEDURE: CheckFireChainHit
+; Returns AL=1 if Mario intersects a chain fireball (level 2 only)
+; ============================================================
+CheckFireChainHit PROC
+    cmp level, 2
+    jne NoHitChain
+    
+    ; chain 1 phase
+    mov eax, move_counter
+    shr eax, 2
+    and eax, 3
+    mov bl, al
+    mov esi, fire_chain1_anchor_x
+    mov edi, fire_chain1_anchor_y
+    call CheckOneChainHit
+    cmp al, 1
+    je HitChain
+    
+    ; chain 2 phase (offset +1)
+    mov eax, move_counter
+    shr eax, 2
+    inc eax
+    and eax, 3
+    mov bl, al
+    mov esi, fire_chain2_anchor_x
+    mov edi, fire_chain2_anchor_y
+    call CheckOneChainHit
+    cmp al, 1
+    je HitChain
+    
+    jmp NoHitChain
+    
+HitChain:
+    mov al, 1
+    ret
+NoHitChain:
+    mov al, 0
+    ret
+CheckFireChainHit ENDP
+
+; Helper: CheckOneChainHit
+; Inputs: esi = anchor_x, edi = anchor_y, bl = phase
+; Output: AL=1 if Mario intersects
+CheckOneChainHit PROC
+    mov ecx, 1
+ChainHitLoop:
+    mov eax, esi
+    mov edx, edi
+    cmp bl, 0
+    je CRight
+    cmp bl, 1
+    je CDown
+    cmp bl, 2
+    je CLeft
+    ; up
+    sub edx, ecx
+    jmp CPosReady
+CRight:
+    add eax, ecx
+    jmp CPosReady
+CDown:
+    add edx, ecx
+    jmp CPosReady
+CLeft:
+    sub eax, ecx
+CPosReady:
+    cmp eax, mario_x
+    jne NextChainBall
+    cmp edx, mario_y
+    jne NextChainBall
+    mov al, 1
+    ret
+NextChainBall:
+    inc ecx
+    cmp ecx, 4
+    jle ChainHitLoop
+    mov al, 0
+    ret
+CheckOneChainHit ENDP
 
 ; ============================================================
 ; PROCEDURE: DrawHUD
@@ -1885,6 +2327,28 @@ CheckCollisions PROC
         add score, 200
     SkipShellHits:
     
+    ; Boss collision (level 2)
+    cmp level, 2
+    jne SkipBossTouch
+    cmp boss_alive, 1
+    jne SkipBossTouch
+    mov eax, mario_x
+    cmp eax, boss_x
+    jne SkipBossTouch
+    mov eax, mario_y
+    cmp eax, boss_y
+    jne SkipBossTouch
+    jmp MarioHurtCommon
+    SkipBossTouch:
+    
+    ; Fire chains (level 2)
+    cmp level, 2
+    jne SkipChainTouch
+    call CheckFireChainHit
+    cmp al, 1
+    je MarioHurtCommon
+    SkipChainTouch:
+    
     ; Check fireballs vs enemies
     ; Fireball 1 vs Goomba 1
     cmp fireball1_dir, 0
@@ -1984,11 +2448,59 @@ CheckCollisions PROC
     add score, 200
     SkipFire2Koopa:
     
+    ; Fireballs vs Boss (level 2)
+    cmp level, 2
+    jne SkipBossFireAll
+    cmp boss_alive, 1
+    jne SkipBossFireAll
+    
+    ; Fireball 1
+    cmp fireball1_dir, 0
+    je CheckBossFireball2
+    mov eax, fireball1_x
+    cmp eax, boss_x
+    jne CheckBossFireball2
+    mov eax, fireball1_y
+    cmp eax, boss_y
+    jne CheckBossFireball2
+    mov fireball1_dir, 0
+    mov fireball1_x, -1
+    dec boss_health
+    cmp boss_health, 0
+    jg CheckBossFireball2
+    mov boss_alive, 0
+    add score, 500
+    
+    CheckBossFireball2:
+    cmp fireball2_dir, 0
+    je SkipBossFireAll
+    mov eax, fireball2_x
+    cmp eax, boss_x
+    jne SkipBossFireAll
+    mov eax, fireball2_y
+    cmp eax, boss_y
+    jne SkipBossFireAll
+    mov fireball2_dir, 0
+    mov fireball2_x, -1
+    dec boss_health
+    cmp boss_health, 0
+    jg SkipBossFireAll
+    mov boss_alive, 0
+    add score, 500
+    SkipBossFireAll:
+    
     ; Check coin collection
     mov eax, mario_y
     imul eax, map_width
     add eax, mario_x
     movzx ecx, byte ptr [level1_map + eax]
+    
+    ; Lava hazard
+    cmp ecx, 14
+    jne NoLava
+    jmp MarioHurtCommon
+    NoLava:
+    
     cmp ecx, 2
     jne NoCoin
     ; Collected coin!
@@ -2032,6 +2544,15 @@ CheckCollisions PROC
     LevelComplete:
     mov level_complete, 1
     NotFlag:
+    
+    ret
+    
+    MarioHurtCommon:
+    dec lives
+    mov mario_x, 5
+    mov mario_y, 17
+    mov mario_velocity_y, 0
+    mov mario_on_ground, 1
     
     ret
 CheckCollisions ENDP
@@ -2324,8 +2845,10 @@ GameLoop PROC
             call UpdateCamera
         call DrawMap
         call DrawHUD
+            call DrawFireChains
         call DrawMario
         call DrawEnemies
+            call DrawBoss
         call DrawFireballs
         
         ; Handle input
@@ -2577,26 +3100,44 @@ main PROC
         mov fireball1_y, -1
         mov fireball2_x, -1
         mov fireball2_y, -1
+    mov goomba1_frozen, 0
+    mov goomba2_frozen, 0
+    mov koopa_frozen, 0
+    mov camera_x, 0
+    mov game_state, 1
+    mov move_counter, 0
+    
+    cmp level, 2
+    jne InitLevel1Actors
+        ; Level 2 setup
+        mov goomba1_alive, 0
+        mov goomba2_alive, 0
+        mov koopa_alive, 0
+        mov boss_alive, 1
+        mov boss_health, 6
+        mov boss_x, 145
+        mov boss_y, 17
+        mov flag_x, 156
+        jmp InitActorsDone
+    InitLevel1Actors:
         mov goomba1_alive, 1
         mov goomba2_alive, 1
-        mov goomba1_frozen, 0
-        mov goomba2_frozen, 0
+        mov koopa_alive, 1
+        mov boss_alive, 0
+        mov boss_health, 0
         mov goomba1_x, 25
         mov goomba1_y, 17
         mov goomba1_dir, 1
         mov goomba2_x, 105
         mov goomba2_y, 17
         mov goomba2_dir, 2
-        mov koopa_alive, 1
         mov koopa_state, 0
         mov koopa_dir, 1
-        mov koopa_frozen, 0
         mov koopa_x, 130
         mov koopa_y, 17
         mov ice_flower_visible, 1
-        mov camera_x, 0
-        mov game_state, 1
-        mov move_counter, 0
+        mov flag_x, 150
+    InitActorsDone:
         
         ; Start game
         call GameLoop
