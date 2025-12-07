@@ -87,6 +87,7 @@ SetConsoleCP PROTO :DWORD
     fire_flower_visible db 0
     fire_spawn_count = 4
     fire_spawn_coords db 16,14, 33,12, 50,14, 18,10  ; x,y pairs on platforms
+    fire_shots_left db 0
     
     ; Fireballs (max 2 on screen)
     fireball1_x dd -1         ; -1 = not active
@@ -1182,6 +1183,8 @@ HandleInput PROC
     ShootFireball:
         cmp fire_active, 1
         jne NoInput
+        cmp fire_shots_left, 0
+        jle NoInput
         ; Find empty fireball slot
         cmp fireball1_dir, 0
         je UseSlot1
@@ -1198,9 +1201,17 @@ HandleInput PROC
             cmp facing_right, 1
             je Fire1Right
             mov fireball1_dir, 2    ; Facing left = direction 2
+            dec fire_shots_left
+            cmp fire_shots_left, 0
+            jg NoInput
+            mov fire_active, 0
             jmp NoInput
             Fire1Right:
             mov fireball1_dir, 1    ; Facing right = direction 1
+            dec fire_shots_left
+            cmp fire_shots_left, 0
+            jg NoInput
+            mov fire_active, 0
             jmp NoInput
         
         UseSlot2:
@@ -1212,9 +1223,17 @@ HandleInput PROC
             cmp facing_right, 1
             je Fire2Right
             mov fireball2_dir, 2    ; Facing left = direction 2
+            dec fire_shots_left
+            cmp fire_shots_left, 0
+            jg NoInput
+            mov fire_active, 0
             jmp NoInput
             Fire2Right:
             mov fireball2_dir, 1    ; Facing right = direction 1
+            dec fire_shots_left
+            cmp fire_shots_left, 0
+            jg NoInput
+            mov fire_active, 0
             jmp NoInput
     
     PauseGame:
@@ -1260,6 +1279,15 @@ UpdateFireballs PROC
     jl DeactivateFire1
     cmp fireball1_x, map_width
     jge DeactivateFire1
+    
+    ; Stop on walls/pipes/platforms
+    push ebx
+    mov eax, fireball1_x
+    mov ebx, fireball1_y
+    call CheckCollisionAt
+    pop ebx
+    cmp al, 1
+    je DeactivateFire1
     jmp SkipUpdate1
     
     DeactivateFire1:
@@ -1284,6 +1312,15 @@ UpdateFireballs PROC
     jl DeactivateFire2
     cmp fireball2_x, map_width
     jge DeactivateFire2
+    
+    ; Stop on walls/pipes/platforms
+    push ebx
+    mov eax, fireball2_x
+    mov ebx, fireball2_y
+    call CheckCollisionAt
+    pop ebx
+    cmp al, 1
+    je DeactivateFire2
     jmp SkipUpdate2
     
     DeactivateFire2:
@@ -1751,6 +1788,7 @@ CheckCollisions PROC
     mov byte ptr [level1_map + eax], 0
     mov fire_flower_visible, 0
     mov fire_active, 1
+    mov fire_shots_left, 2
     mov fireball1_dir, 0
     mov fireball2_dir, 0
     mov fireball1_x, -1
@@ -2242,6 +2280,7 @@ main PROC
         mov game_timer, 110     ; Start with 110 seconds (1:50)
         mov frame_counter, 0
         mov fire_active, 0
+        mov fire_shots_left, 0
         mov fireball1_dir, 0
         mov fireball2_dir, 0
         mov fireball1_x, -1
