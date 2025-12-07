@@ -4,12 +4,6 @@
 ; ############################################################
 
 INCLUDE Irvine32.inc
-includelib Winmm.lib
-
-PlaySound PROTO,
-    pszSound:PTR BYTE,
-    hmod:DWORD,
-    fdwSound:DWORD
 
 SetConsoleOutputCP PROTO :DWORD
 SetConsoleCP PROTO :DWORD
@@ -42,7 +36,7 @@ SetConsoleCP PROTO :DWORD
     level_select_hint db "Level 2 uses placeholder layout for now",0
     level_select_prompt db "Press 1 or 2 to start",0
     level_opt1 db "1) Level 1 - Grassland ",0
-    level_opt2 db "2) Level 2 - In development (placeholder)",0
+    level_opt2 db "2) Level 2 - Boss Level",0
     
     ; === PAUSE MENU STRINGS ===
     pause_title db "PAUSED",0
@@ -137,10 +131,19 @@ SetConsoleCP PROTO :DWORD
     level_complete db 0
     
     ; === LEVEL 2 FIRE CHAINS ===
+    ; Horizontal chains
     fire_chain1_anchor_x dd 70
     fire_chain1_anchor_y dd 12
     fire_chain2_anchor_x dd 110
     fire_chain2_anchor_y dd 14
+    
+    ; Vertical chains (hanging from ceiling)
+    vchain1_x dd 85
+    vchain1_y dd 3
+    vchain2_x dd 100
+    vchain2_y dd 4
+    vchain3_x dd 130
+    vchain3_y dd 3
     
     ; === MOVING PLATFORMS (Level 2) ===
     moving_plat_count = 3
@@ -767,7 +770,7 @@ FireFind2:
     imul eax, map_width
     add eax, fire_flower_x
     movzx ebx, byte ptr [level1_map + eax]
-    cmp ebx, 1
+    cmp ebx, 1              ; ensure platform tile
     je FirePlace2
     inc edi
     cmp edi, fire_spawn_count
@@ -790,16 +793,14 @@ FirePlace2:
     mov ecx, mushroom_spawn_count
 MushFind2:
     cmp ecx, 0
-    jle MushPlace2_Default
+    jle MushPlace2
     mov ebx, edi
     shl ebx, 1
     movzx eax, byte ptr [mushroom_spawn_coords + ebx]
     mov mushroom_x, eax
     movzx eax, byte ptr [mushroom_spawn_coords + ebx + 1]
     mov mushroom_y, eax
-    ; Check if position below is solid (platform)
     mov eax, mushroom_y
-    inc eax
     imul eax, map_width
     add eax, mushroom_x
     movzx ebx, byte ptr [level1_map + eax]
@@ -812,12 +813,6 @@ MushFind2:
 MushCont2:
     dec ecx
     jmp MushFind2
-MushPlace2_Default:
-    ; Fallback: place at first coordinate
-    movzx eax, byte ptr [mushroom_spawn_coords]
-    mov mushroom_x, eax
-    movzx eax, byte ptr [mushroom_spawn_coords + 1]
-    mov mushroom_y, eax
 MushPlace2:
     mov eax, mushroom_y
     imul eax, map_width
@@ -1618,12 +1613,6 @@ DrawFireChains PROC
     cmp level, 2
     jne NoChains
     
-    ; phase cycles every few frames using move_counter
-    mov eax, move_counter
-    shr eax, 2
-    and eax, 3
-    mov bl, al                 ; phase for chain1
-    ; chain 1
     push ebx
     push eax
     push edx
@@ -1631,6 +1620,14 @@ DrawFireChains PROC
     push esi
     push edi
     
+    ; === HORIZONTAL CHAINS ===
+    ; phase cycles every few frames using move_counter
+    mov eax, move_counter
+    shr eax, 2
+    and eax, 3
+    mov bl, al                 ; phase for chain1
+    
+    ; chain 1
     mov esi, fire_chain1_anchor_x
     mov edi, fire_chain1_anchor_y
     call DrawOneChain
@@ -1644,6 +1641,31 @@ DrawFireChains PROC
     mov esi, fire_chain2_anchor_x
     mov edi, fire_chain2_anchor_y
     call DrawOneChain
+    
+    ; === VERTICAL CHAINS (hanging down) ===
+    ; Vertical chain 1
+    mov esi, vchain1_x
+    mov edi, vchain1_y
+    call DrawVerticalChain
+    
+    ; Vertical chain 2 (swinging)
+    mov eax, move_counter
+    shr eax, 3
+    and eax, 1
+    mov esi, vchain2_x
+    add esi, eax              ; slight horizontal swing
+    mov edi, vchain2_y
+    call DrawVerticalChain
+    
+    ; Vertical chain 3
+    mov eax, move_counter
+    shr eax, 3
+    and eax, 1
+    xor eax, 1                ; opposite phase
+    mov esi, vchain3_x
+    add esi, eax
+    mov edi, vchain3_y
+    call DrawVerticalChain
     
     pop edi
     pop esi
@@ -1702,6 +1724,39 @@ SkipBall:
     ret
 DrawOneChain ENDP
 
+; Helper: DrawVerticalChain
+; Inputs: esi = x position, edi = y position (top anchor)
+; Draws a chain hanging downward with 5 fireballs
+DrawVerticalChain PROC
+    mov ecx, 0
+VChainLoop:
+    mov eax, esi
+    mov edx, edi
+    add edx, ecx              ; hang downward
+    
+    ; cull to viewport
+    sub eax, camera_x
+    cmp eax, 0
+    jl SkipVBall
+    cmp eax, viewport_width
+    jge SkipVBall
+    cmp edx, 24
+    jge SkipVBall
+    
+    mov dh, dl
+    mov dl, al
+    call Gotoxy
+    mov eax, lightRed + (black*16)
+    call SetTextColor
+    mov al, 'o'
+    call WriteChar
+SkipVBall:
+    inc ecx
+    cmp ecx, 5                ; 5 fireballs hanging down
+    jl VChainLoop
+    ret
+DrawVerticalChain ENDP
+
 ; ============================================================
 ; PROCEDURE: CheckFireChainHit
 ; Returns AL=1 if Mario intersects a chain fireball (level 2 only)
@@ -1710,6 +1765,7 @@ CheckFireChainHit PROC
     cmp level, 2
     jne NoHitChain
     
+    ; === HORIZONTAL CHAINS ===
     ; chain 1 phase
     mov eax, move_counter
     shr eax, 2
@@ -1730,6 +1786,37 @@ CheckFireChainHit PROC
     mov esi, fire_chain2_anchor_x
     mov edi, fire_chain2_anchor_y
     call CheckOneChainHit
+    cmp al, 1
+    je HitChain
+    
+    ; === VERTICAL CHAINS ===
+    ; Vertical chain 1
+    mov esi, vchain1_x
+    mov edi, vchain1_y
+    call CheckVerticalChainHit
+    cmp al, 1
+    je HitChain
+    
+    ; Vertical chain 2 (with swing)
+    mov eax, move_counter
+    shr eax, 3
+    and eax, 1
+    mov esi, vchain2_x
+    add esi, eax
+    mov edi, vchain2_y
+    call CheckVerticalChainHit
+    cmp al, 1
+    je HitChain
+    
+    ; Vertical chain 3 (opposite swing)
+    mov eax, move_counter
+    shr eax, 3
+    and eax, 1
+    xor eax, 1
+    mov esi, vchain3_x
+    add esi, eax
+    mov edi, vchain3_y
+    call CheckVerticalChainHit
     cmp al, 1
     je HitChain
     
@@ -1782,6 +1869,30 @@ NextChainBall:
     mov al, 0
     ret
 CheckOneChainHit ENDP
+
+; Helper: CheckVerticalChainHit
+; Inputs: esi = x position, edi = y position (top)
+; Output: AL=1 if Mario hits any fireball in the vertical chain
+CheckVerticalChainHit PROC
+    mov ecx, 0
+VChainHitLoop:
+    mov eax, esi
+    mov edx, edi
+    add edx, ecx              ; hanging down
+    
+    cmp eax, mario_x
+    jne NextVBall
+    cmp edx, mario_y
+    jne NextVBall
+    mov al, 1
+    ret
+NextVBall:
+    inc ecx
+    cmp ecx, 5
+    jl VChainHitLoop
+    mov al, 0
+    ret
+CheckVerticalChainHit ENDP
 
 ; ============================================================
 ; PROCEDURE: DrawHUD
@@ -2467,7 +2578,7 @@ SkipMovePlatUpdate:
     
     ; Boss fire timer and launch if idle
     inc boss_fire_timer
-    cmp boss_fire_timer, 25
+    cmp boss_fire_timer, 10      ; Reduced from 25 to 15 for more frequent fireballs
     jl BossMove
     mov boss_fire_timer, 0
     cmp boss_fire_dir, 0
@@ -3242,49 +3353,99 @@ DrawPauseMenu ENDP
 PrintMainMenu PROC
     call Clrscr
     
+    ; Draw top border
+    mov eax, lightCyan + (black*16)
+    call SetTextColor
+    mov dh, 0
+    mov dl, 0
+    call Gotoxy
+    mov ecx, 80
+    DrawTopBorder:
+        mov al, 205  ; ═
+        call WriteChar
+        loop DrawTopBorder
+    
     ; Draw colorful MARIO ASCII art
     call DrawMarioASCII
     
-    ; Draw "BROS" subtitle
-    mov eax, magenta + (black*16)
+    ; Draw "SUPER MARIO BROS" subtitle with background
+    mov eax, yellow + (blue*16)
     call SetTextColor
+    mov dh, 9
+    mov dl, 28
+    call Gotoxy
+    mov al, ' '
+    mov ecx, 24
+    DrawTitleBg:
+        call WriteChar
+        loop DrawTitleBg
     mov dh, 9
     mov dl, 30
     call Gotoxy
     mov edx, offset title1
     call WriteString
     
-    mov eax, yellow + (black*16)
+    ; Roll number with icon
+    mov eax, lightGreen + (black*16)
     call SetTextColor
     mov dh, 11
-    mov dl, 30
+    mov dl, 28
     call Gotoxy
+    mov al, 16  ; ►
+    call WriteChar
+    mov al, ' '
+    call WriteChar
     mov edx, offset myRoll
     call WriteString
     
+    ; Menu options with icons
     mov eax, green + (black*16)
     call SetTextColor
     mov dh, 14
-    mov dl, 30
+    mov dl, 28
     call Gotoxy
+    mov al, 16  ; ►
+    call WriteChar
+    mov al, ' '
+    call WriteChar
     mov edx, offset play_title
     call WriteString
     
     mov eax, cyan + (black*16)
     call SetTextColor
     mov dh, 16
-    mov dl, 30
+    mov dl, 28
     call Gotoxy
+    mov al, 16  ; ►
+    call WriteChar
+    mov al, ' '
+    call WriteChar
     mov edx, offset score_prompt
     call WriteString
     
     mov eax, red + (black*16)
     call SetTextColor
     mov dh, 18
-    mov dl, 30
+    mov dl, 28
     call Gotoxy
+    mov al, 16  ; ►
+    call WriteChar
+    mov al, ' '
+    call WriteChar
     mov edx, offset quitt
     call WriteString
+    
+    ; Draw bottom border
+    mov eax, lightCyan + (black*16)
+    call SetTextColor
+    mov dh, 23
+    mov dl, 0
+    call Gotoxy
+    mov ecx, 80
+    DrawBottomBorder:
+        mov al, 205  ; ═
+        call WriteChar
+        loop DrawBottomBorder
     
     ret
 PrintMainMenu ENDP
@@ -3296,16 +3457,46 @@ PrintMainMenu ENDP
 ShowInstructionsAndSelectLevel PROC
     call Clrscr
     
-    ; Title
-    mov eax, yellow + (black*16)
+    ; Draw decorative box around title
+    mov eax, lightCyan + (black*16)
+    call SetTextColor
+    mov dh, 1
+    mov dl, 25
+    call Gotoxy
+    mov ecx, 30
+    DrawInstrTopBorder:
+        mov al, 205  ; ═
+        call WriteChar
+        loop DrawInstrTopBorder
+    
+    ; Title with background
+    mov eax, yellow + (blue*16)
     call SetTextColor
     mov dh, 2
-    mov dl, 30
+    mov dl, 25
+    call Gotoxy
+    mov ecx, 30
+    DrawInstrTitleBg:
+        mov al, ' '
+        call WriteChar
+        loop DrawInstrTitleBg
+    mov dh, 2
+    mov dl, 32
     call Gotoxy
     mov edx, offset instr_title
     call WriteString
     
-    ; Divider under title
+    ; Bottom border of title box
+    mov eax, lightCyan + (black*16)
+    call SetTextColor
+    mov dh, 3
+    mov dl, 25
+    call Gotoxy
+    mov ecx, 30
+    DrawInstrBottomBorder:
+        mov al, 205  ; ═
+        call WriteChar
+        loop DrawInstrBottomBorder
     mov eax, white + (black*16)
     call SetTextColor
     mov dh, 3
@@ -3417,43 +3608,93 @@ ShowInstructionsAndSelectLevel ENDP
 GetPlayerName PROC
     call Clrscr
     
-    ; Title
-    mov eax, yellow + (black*16)
+    ; Draw decorative box
+    mov eax, lightCyan + (black*16)
+    call SetTextColor
+    mov dh, 6
+    mov dl, 18
+    call Gotoxy
+    mov ecx, 44
+    DrawNameTopBorder:
+        mov al, 205  ; ═
+        call WriteChar
+        loop DrawNameTopBorder
+    
+    ; Title with background
+    mov eax, yellow + (blue*16)
     call SetTextColor
     mov dh, 8
-    mov dl, 28
+    mov dl, 26
+    call Gotoxy
+    mov ecx, 28
+    DrawNameTitleBg:
+        mov al, ' '
+        call WriteChar
+        loop DrawNameTitleBg
+    mov dh, 8
+    mov dl, 30
     call Gotoxy
     mov edx, offset name_entry_title
     call WriteString
     
-    ; Prompt
-    mov eax, white + (black*16)
+    ; Prompt with icon
+    mov eax, lightGreen + (black*16)
     call SetTextColor
     mov dh, 12
     mov dl, 20
     call Gotoxy
+    mov al, 16  ; ►
+    call WriteChar
+    mov al, ' '
+    call WriteChar
+    mov eax, white + (black*16)
+    call SetTextColor
     mov edx, offset name_entry_prompt
     call WriteString
     
     ; Hint
-    mov eax, gray + (black*16)
+    mov eax, lightGray + (black*16)
     call SetTextColor
     mov dh, 14
-    mov dl, 24
+    mov dl, 26
     call Gotoxy
     mov edx, offset name_entry_hint
     call WriteString
     
-    ; Get input
-    mov eax, white + (black*16)
+    ; Input box background
+    mov eax, white + (gray*16)
     call SetTextColor
     mov dh, 12
     mov dl, 42
+    call Gotoxy
+    mov ecx, 17
+    DrawInputBox:
+        mov al, ' '
+        call WriteChar
+        loop DrawInputBox
+    
+    ; Get input
+    mov eax, black + (white*16)
+    call SetTextColor
+    mov dh, 12
+    mov dl, 43
     call Gotoxy
     
     mov edx, offset currentPlayerName
     mov ecx, 15                ; Max 15 characters
     call ReadString
+    
+    ; Draw bottom border
+    mov eax, lightCyan + (black*16)
+    call SetTextColor
+    mov dh, 17
+    mov dl, 18
+    call Gotoxy
+    mov ecx, 44
+    DrawNameBottomBorder:
+        mov al, 205  ; ═
+        call WriteChar
+        loop DrawNameBottomBorder
     
     ; If empty, use default
     cmp eax, 0
