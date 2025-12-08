@@ -160,3 +160,11 @@ Hope you enjoy playing! The code is well-commented if you want to explore :)
 
 
 
+<img width="1012" height="577" alt="title_screen" src="https://github.com/user-attachments/assets/ba5a5935-5f1d-454f-a133-021d24fd708e" />
+
+
+
+<img width="1362" height="687" alt="instructions" src="https://github.com/user-attachments/assets/1a6ed9dd-8b9f-467a-94fd-b0be6b9ca0eb" />
+<img width="941" height="515" alt="credentials" src="https://github.com/user-attachments/assets/04ea6ee7-b886-4855-a107-e9e99ed62780" />
+<img width="995" height="596" alt="level1" src="https://github.com/user-attachments/assets/689c719d-3b8e-4e9b-b708-965f55a78be4" />
+<img width="975" height="572" alt="level2" src="https://github.com/user-attachments/assets/715e25d5-2e55-4ad3-9bbd-0b96b91767a1" />
