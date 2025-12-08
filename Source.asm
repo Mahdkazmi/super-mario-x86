@@ -1,6 +1,8 @@
 ; ############################################################
-; SUPER MARIO GAME - Roll Number: 2587 (Last Digit: 7)
-; Fire Master Mario - Green Shirt
+; SUPER MARIO GAME
+; Name: Muhammad Mahd kazmi
+; Roll Number: 23i-2587
+; Section: CS - B
 ; ############################################################
 
 INCLUDE Irvine32.inc
@@ -72,15 +74,15 @@ SetConsoleCP PROTO :DWORD
     ; === PLAYER DATA ===
     userName db 20 dup(?)
     userNameSize = 20
-    currentPlayerName db 16 dup(0)  ; Current player's name
+    currentPlayerName db 16 dup(0)  
     
     ; === HIGH SCORE DATA ===
     fileHandle HANDLE ?
     bytesWritten DWORD ?
-    highScoreBuffer db 512 dup(0)  ; Buffer for file I/O
+    highScoreBuffer db 512 dup(0)  ; Buffer for file handling
     highScoreCount dd 0
     
-    ; High score entries (max 5)
+    ; High score entries (5 max)
     highScoreName1 db 16 dup(0)
     highScoreValue1 dd 0
     highScoreName2 db 16 dup(0)
@@ -95,14 +97,14 @@ SetConsoleCP PROTO :DWORD
     mario_x dd 5
     mario_y dd 18
     mario_velocity_y dd 0     ; For jump physics
-    mario_on_ground db 1      ; 1 if on ground, 0 if in air
+    mario_on_ground db 1      ; 1 if on ground and 0 if in air
     normal_jump_power dd -4   ; base jump
     super_jump_power dd -5    ; boosted jump
-    mario_jump_power dd -4    ; current jump power (mutable)
+    mario_jump_power dd -4    ; current jump power
     gravity = 1               ; Pull down
-    mario_speed = 1           ; Movement speed
+    mario_speed = 1           ; Movement speed of mario
     
-    ; === FIRE MASTER MARIO (Roll 2587 - Last Digit 7) ===
+    ; === FIRE MASTER MARIO (roll number customization) ===
     fire_active db 1          ; Starts WITH fire power (Fire Master Mario)
     ice_flower_x dd 15
     ice_flower_y dd 10
@@ -127,10 +129,10 @@ SetConsoleCP PROTO :DWORD
     mushroom_spawn_coords db \
         16,14, 33,12, 50,14, 18,10, 25,14, \
         52,12, 67,10, 110,15, 120,8, 32,9, 140,17
-    flag_x dd 158             ; Flagpole positioned after axe and bridge
+    flag_x dd 158             ; Flagpole positioned after axe and bridge (level 2 k liye)
     level_complete db 0
     
-    ; === CHECKPOINT SYSTEM (Level 2) ===
+    ; === CHECKPOINT SYSTEM (Level 2 only) ===
     checkpoint_x dd 80        ; Checkpoint position
     checkpoint_y dd 15        ; Y position for checkpoint flag
     checkpoint_reached db 0   ; 0 = not reached, 1 = reached
@@ -707,7 +709,6 @@ InitializeLevel1 ENDP
 
 ; ============================================================
 ; PROCEDURE: InitializeLevel2
-; Placeholder: currently reuses level 1 layout
 ; ============================================================
 InitializeLevel2 PROC
     mov level, 2
@@ -739,7 +740,7 @@ InitializeLevel2 PROC
         cmp eax, map_height
         jl GroundLoop2
     
-    ; Ceiling stone rows (rows 1-2) to give a cave feel
+    ; Ceiling stone rows (rows 1-2) 
     mov eax, 1
     CeilRowLoop2:
         mov ebx, 0
@@ -845,7 +846,7 @@ MushPlace2:
         cmp ebx, 38
         jl Lava1Loop
     
-    ; Pit 2: columns 87-88 (very narrow)
+    ; Pit 2: columns 87-88 
     mov ebx, 87
     Lava2Loop:
         mov eax, 18
@@ -1440,7 +1441,6 @@ DrawEnemies ENDP
 
 ; ============================================================
 ; PROCEDURE: DrawFireballs
-; Draws active fireballs (BLUE for Fire Master Mario)
 ; ============================================================
 DrawFireballs PROC
     ; Fireball 1
@@ -1649,7 +1649,7 @@ DrawFireChains PROC
     mov edi, fire_chain2_anchor_y
     call DrawOneChain
     
-    ; === VERTICAL CHAINS (hanging down) ===
+    ; === VERTICAL CHAINS  ===
     ; Vertical chain 1
     mov esi, vchain1_x
     mov edi, vchain1_y
@@ -1989,7 +1989,6 @@ CheckVerticalChainHit ENDP
 
 ; ============================================================
 ; PROCEDURE: DrawHUD
-; Draws score, lives, etc.
 ; ============================================================
 DrawHUD PROC
     ; Save current position
