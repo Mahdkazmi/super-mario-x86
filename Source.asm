@@ -32,11 +32,11 @@ SetConsoleCP PROTO :DWORD
     instr_quit db "Quit: Q",0
     instr_power db "Power-ups: Fire flower = fireballs, Ice flower = freeze",0
     instr_divider db "---------------",0
-    level_select_title db "Select Level (1 or 2)",0
-    level_select_hint db "Level 2 uses placeholder layout for now",0
+    level_select_title db "Select Level:",0
+    level_select_hint db "Enter Level 2 at your own RISK",0
     level_select_prompt db "Press 1 or 2 to start",0
-    level_opt1 db "1) Level 1 - Grassland ",0
-    level_opt2 db "2) Level 2 - Boss Level",0
+    level_opt1 db "1) LEVEL 1 - Grassland ",0
+    level_opt2 db "2) LEVEL 2 - Boss Level",0
     
     ; === PAUSE MENU STRINGS ===
     pause_title db "PAUSED",0
@@ -103,7 +103,7 @@ SetConsoleCP PROTO :DWORD
     mario_speed = 1           ; Movement speed
     
     ; === FIRE MASTER MARIO (Roll 2587 - Last Digit 7) ===
-    fire_active db 0          ; Starts without fire until power-up collected
+    fire_active db 1          ; Starts WITH fire power (Fire Master Mario)
     ice_flower_x dd 15
     ice_flower_y dd 10
     ice_flower_visible db 1
@@ -117,7 +117,7 @@ SetConsoleCP PROTO :DWORD
     fire_spawn_coords db \
         16,14, 33,12, 50,14, 18,10, 25,14, 32,9, \
         52,12, 67,10, 70,11, 102,15, 118,8, 140,17   ; platform positions both levels (incl. L2)
-    fire_shots_left db 0
+    fire_shots_left db 99     ; Start with 99 shots (Fire Master Mode)
     
     ; Super mushroom power-up (random spawn)
     mushroom_x dd 0
@@ -129,6 +129,13 @@ SetConsoleCP PROTO :DWORD
         52,12, 67,10, 110,15, 120,8, 32,9, 140,17
     flag_x dd 158             ; Flagpole positioned after axe and bridge
     level_complete db 0
+    
+    ; === CHECKPOINT SYSTEM (Level 2) ===
+    checkpoint_x dd 80        ; Checkpoint position
+    checkpoint_y dd 15        ; Y position for checkpoint flag
+    checkpoint_reached db 0   ; 0 = not reached, 1 = reached
+    checkpoint_message db "CHECKPOINT!",0
+    checkpoint_display_timer db 0  ; Frames to show message
     
     ; === LEVEL 2 FIRE CHAINS ===
     ; Horizontal chains
@@ -1758,6 +1765,92 @@ SkipVBall:
 DrawVerticalChain ENDP
 
 ; ============================================================
+; PROCEDURE: DrawCheckpoint
+; Draws checkpoint flag in level 2
+; ============================================================
+DrawCheckpoint PROC
+    push eax
+    push edx
+    
+    mov eax, checkpoint_x
+    sub eax, camera_x
+    cmp eax, 0
+    jl SkipCheckpoint
+    cmp eax, viewport_width
+    jge SkipCheckpoint
+    
+    ; Draw flag pole
+    mov dl, al
+    mov dh, byte ptr checkpoint_y
+    add dh, 1
+    call Gotoxy
+    mov eax, gray + (black*16)
+    call SetTextColor
+    mov al, 179  ; │
+    call WriteChar
+    
+    mov dh, byte ptr checkpoint_y
+    add dh, 2
+    call Gotoxy
+    mov al, 179  ; │
+    call WriteChar
+    
+    ; Draw flag (changes color when reached)
+    mov eax, checkpoint_x
+    sub eax, camera_x
+    mov dl, al
+    mov dh, byte ptr checkpoint_y
+    call Gotoxy
+    cmp checkpoint_reached, 1
+    je CheckpointReachedColor
+    mov eax, white + (black*16)  ; White flag = not reached
+    jmp DrawFlag
+    CheckpointReachedColor:
+    mov eax, lightGreen + (black*16)  ; Green flag = reached
+    DrawFlag:
+    call SetTextColor
+    mov al, 16  ; ►
+    call WriteChar
+    
+SkipCheckpoint:
+    pop edx
+    pop eax
+    ret
+DrawCheckpoint ENDP
+
+; ============================================================
+; PROCEDURE: CheckCheckpoint
+; Checks if Mario reached checkpoint
+; ============================================================
+CheckCheckpoint PROC
+    push eax
+    push ebx
+    
+    ; Skip if already reached
+    cmp checkpoint_reached, 1
+    je AlreadyReached
+    
+    ; Check if Mario is at or past checkpoint
+    mov eax, mario_x
+    mov ebx, checkpoint_x
+    cmp eax, ebx
+    jl NotReached
+    
+    ; Activate checkpoint!
+    mov checkpoint_reached, 1
+    mov checkpoint_display_timer, 40  ; Show message for 40 frames (2 seconds)
+    
+    ; Add bonus points
+    add score, 500
+    
+NotReached:
+AlreadyReached:
+    pop ebx
+    pop eax
+    ret
+CheckCheckpoint ENDP
+
+; ============================================================
 ; PROCEDURE: CheckFireChainHit
 ; Returns AL=1 if Mario intersects a chain fireball (level 2 only)
 ; ============================================================
@@ -1968,6 +2061,19 @@ DrawHUD PROC
     pop eax
     NoLeadingZero:
     call WriteDec
+    
+    ; Display checkpoint message if active
+    cmp checkpoint_display_timer, 0
+    je NoCheckpointMsg
+    mov eax, yellow + (black*16)
+    call SetTextColor
+    mov dh, 11
+    mov dl, 30
+    call Gotoxy
+    mov edx, offset checkpoint_message
+    call WriteString
+    dec checkpoint_display_timer
+    NoCheckpointMsg:
     
     ; Reset to normal colors
     mov eax, white + (black*16)
@@ -2865,7 +2971,16 @@ CheckCollisions PROC
     jmp SkipGoomba1Coll
     MarioHurt1:
     dec lives
-    ; Respawn Mario
+    ; Respawn Mario (checkpoint in level 2)
+    cmp level, 2
+    jne Goomba1ResetToStart
+    cmp checkpoint_reached, 1
+    jne Goomba1ResetToStart
+    mov eax, checkpoint_x
+    mov mario_x, eax
+    mov mario_y, 15
+    jmp SkipGoomba1Coll
+    Goomba1ResetToStart:
     mov mario_x, 5
     mov mario_y, 17
     SkipGoomba1Coll:
@@ -2887,6 +3002,15 @@ CheckCollisions PROC
     jmp SkipGoomba2Coll
     MarioHurt2:
     dec lives
+    cmp level, 2
+    jne Goomba2ResetToStart
+    cmp checkpoint_reached, 1
+    jne Goomba2ResetToStart
+    mov eax, checkpoint_x
+    mov mario_x, eax
+    mov mario_y, 15
+    jmp SkipGoomba2Coll
+    Goomba2ResetToStart:
     mov mario_x, 5
     mov mario_y, 17
     SkipGoomba2Coll:
@@ -2917,6 +3041,15 @@ CheckCollisions PROC
     je KoopaShellHurt
     ; Walking Koopa hurts
     dec lives
+    cmp level, 2
+    jne KoopaWalkResetToStart
+    cmp checkpoint_reached, 1
+    jne KoopaWalkResetToStart
+    mov eax, checkpoint_x
+    mov mario_x, eax
+    mov mario_y, 15
+    jmp SkipKoopaColl
+    KoopaWalkResetToStart:
     mov mario_x, 5
     mov mario_y, 17
     jmp SkipKoopaColl
@@ -2935,6 +3068,15 @@ CheckCollisions PROC
     
     KoopaShellHurt:
     dec lives
+    cmp level, 2
+    jne KoopaShellResetToStart
+    cmp checkpoint_reached, 1
+    jne KoopaShellResetToStart
+    mov eax, checkpoint_x
+    mov mario_x, eax
+    mov mario_y, 15
+    jmp SkipKoopaColl
+    KoopaShellResetToStart:
     mov mario_x, 5
     mov mario_y, 17
     SkipKoopaColl:
@@ -3236,8 +3378,19 @@ AxeBridgeLoop:
     
     MarioHurtCommon:
     dec lives
+    ; Respawn at checkpoint if in level 2 and checkpoint reached
+    cmp level, 2
+    jne CommonResetToStart
+    cmp checkpoint_reached, 1
+    jne CommonResetToStart
+    mov eax, checkpoint_x
+    mov mario_x, eax
+    mov mario_y, 15
+    jmp CommonPositionSet
+    CommonResetToStart:
     mov mario_x, 5
     mov mario_y, 17
+    CommonPositionSet:
     mov mario_velocity_y, 0
     mov mario_on_ground, 1
     mov super_active, 0
@@ -3506,42 +3659,88 @@ ShowInstructionsAndSelectLevel PROC
     call WriteString
     
     ; Controls
-    mov eax, white + (black*16)
+    mov eax, lightCyan + (black*16)
     call SetTextColor
     
-    mov dh, 4
-    mov dl, 8
+    mov dh, 6
+    mov dl, 20
     call Gotoxy
+    mov al, 16  ; ►
+    call WriteChar
+    mov al, ' '
+    call WriteChar
+    mov eax, white + (black*16)
+    call SetTextColor
     mov edx, offset instr_move
     call WriteString
     
-    mov dh, 5
-    mov dl, 8
+    mov eax, lightCyan + (black*16)
+    call SetTextColor
+    mov dh, 7
+    mov dl, 20
     call Gotoxy
+    mov al, 16  ; ►
+    call WriteChar
+    mov al, ' '
+    call WriteChar
+    mov eax, white + (black*16)
+    call SetTextColor
     mov edx, offset instr_jump
     call WriteString
     
-    mov dh, 6
-    mov dl, 8
+    mov eax, lightCyan + (black*16)
+    call SetTextColor
+    mov dh, 8
+    mov dl, 20
     call Gotoxy
+    mov al, 16  ; ►
+    call WriteChar
+    mov al, ' '
+    call WriteChar
+    mov eax, white + (black*16)
+    call SetTextColor
     mov edx, offset instr_shoot
     call WriteString
     
-    mov dh, 7
-    mov dl, 8
+    mov eax, lightCyan + (black*16)
+    call SetTextColor
+    mov dh, 9
+    mov dl, 20
     call Gotoxy
+    mov al, 16  ; ►
+    call WriteChar
+    mov al, ' '
+    call WriteChar
+    mov eax, white + (black*16)
+    call SetTextColor
     mov edx, offset instr_pause
     call WriteString
     
-    mov dh, 8
-    mov dl, 8
+    mov eax, lightCyan + (black*16)
+    call SetTextColor
+    mov dh, 10
+    mov dl, 20
     call Gotoxy
+    mov al, 16  ; ►
+    call WriteChar
+    mov al, ' '
+    call WriteChar
+    mov eax, white + (black*16)
+    call SetTextColor
     mov edx, offset instr_quit
     call WriteString
     
-    mov dh, 9
-    mov dl, 8
+    mov eax, lightCyan + (black*16)
+    call SetTextColor
+    mov dh, 11
+    mov dl, 20
     call Gotoxy
+    mov al, 16  ; ►
+    call WriteChar
+    mov al, ' '
+    call WriteChar
+    mov eax, white + (black*16)
+    call SetTextColor
     mov edx, offset instr_power
     call WriteString
     
@@ -3549,7 +3748,7 @@ ShowInstructionsAndSelectLevel PROC
     mov eax, lightGreen + (black*16)
     call SetTextColor
     mov dh, 14
-    mov dl, 20
+    mov dl, 24
     call Gotoxy
     mov edx, offset level_select_title
     call WriteString
@@ -3641,7 +3840,7 @@ GetPlayerName PROC
     mov eax, lightGreen + (black*16)
     call SetTextColor
     mov dh, 12
-    mov dl, 20
+    mov dl, 22
     call Gotoxy
     mov al, 16  ; ►
     call WriteChar
@@ -3665,7 +3864,7 @@ GetPlayerName PROC
     mov eax, white + (gray*16)
     call SetTextColor
     mov dh, 12
-    mov dl, 42
+    mov dl, 39
     call Gotoxy
     mov ecx, 17
     DrawInputBox:
@@ -3677,7 +3876,7 @@ GetPlayerName PROC
     mov eax, black + (white*16)
     call SetTextColor
     mov dh, 12
-    mov dl, 43
+    mov dl, 40
     call Gotoxy
     
     mov edx, offset currentPlayerName
@@ -3900,6 +4099,11 @@ GameLoop PROC
         call DrawHUD
             call DrawFireChains
             call DrawMovingPlatforms
+            ; Draw checkpoint in level 2
+            cmp level, 2
+            jne SkipCheckpointDraw
+            call DrawCheckpoint
+            SkipCheckpointDraw:
         call DrawMario
         call DrawEnemies
             call DrawBoss
@@ -3973,9 +4177,19 @@ GameLoop PROC
         cmp lives, 0
         jle GameOver            ; No lives left = game over
         
-        ; Respawn Mario with remaining lives
+        ; Respawn Mario with remaining lives (checkpoint in level 2)
+        cmp level, 2
+        jne TimeoutResetToStart
+        cmp checkpoint_reached, 1
+        jne TimeoutResetToStart
+        mov eax, checkpoint_x
+        mov mario_x, eax
+        mov mario_y, 15
+        jmp TimeoutPositionSet
+        TimeoutResetToStart:
         mov mario_x, 5
         mov mario_y, 17
+        TimeoutPositionSet:
         mov mario_velocity_y, 0
         mov mario_on_ground, 1
         mov game_timer, 110     ; Reset timer to 1:50
@@ -4000,6 +4214,12 @@ GameLoop PROC
         
         ; Check collisions
         call CheckCollisions
+        
+        ; Check checkpoint (Level 2 only)
+        cmp level, 2
+        jne SkipCheckpointCheck
+        call CheckCheckpoint
+        SkipCheckpointCheck:
         
         ; Check level completion
         cmp level_complete, 1
@@ -4174,14 +4394,15 @@ main PROC
         mov score, 0
         mov game_timer, 110     ; Start with 110 seconds (1:50)
         mov frame_counter, 0
-        mov fire_active, 0
-        mov fire_shots_left, 0
+        mov fire_active, 1      ; Fire Master Mario starts with fire power
+        mov fire_shots_left, 99 ; Plenty of shots
         mov fireball1_dir, 0
         mov fireball2_dir, 0
         mov fireball1_x, -1
         mov fireball1_y, -1
         mov fireball2_x, -1
         mov fireball2_y, -1
+        mov checkpoint_reached, 0  ; Reset checkpoint
     mov boss_fire_dir, 0
     mov boss_fire_x, -1
     mov boss_fire_y, -1
