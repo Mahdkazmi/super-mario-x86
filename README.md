@@ -1,10 +1,6 @@
 SUPER MARIO BROS - Assembly Game Project
 
-Project Name: Super Mario Bros (x86 Assembly)
-Author: Muhammad Mahd Kazmi
-Roll Number: 23i-2587
-Section: CS-B
-Course: Computer Organization and Assembly Language 
+
 
 ----------------
 PROJECT OVERVIEW
